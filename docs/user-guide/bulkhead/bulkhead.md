@@ -245,19 +245,34 @@ with a known and reasonably constant base latency.
 
 The strategy sub-builders ship with a built-in `balanced` baseline. An empty sub-block produces a usable
 configuration without any setter calls — `b.codel(c -> {})`, `b.adaptive(a -> a.aimd(x -> {}))`, and
-`b.adaptive(a -> a.vegas(v -> {}))` all compile and run.
+`b.adaptive(a -> a.vegas(v -> {}))` all compile and run. The two algorithm sub-builders additionally expose the same
+three named presets the top-level builder uses (`protective` / `balanced` / `permissive`); the names mean the same
+thing on both layers, so no separate vocabulary has to be learned.
 
-| Sub-block                    | Defaults applied when no setter is called                                                                                                                      |
-|------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `b.semaphore()`              | No fields of its own — draws `maxConcurrentCalls` and `maxWaitDuration` from the top-level builder's [presets](#presets) or setters.                           |
-| `b.codel(c -> {})`           | `targetDelay = 50 ms`, `interval = 500 ms`.                                                                                                                    |
-| `a.aimd(x -> {})`            | `initialLimit = 50`, `minLimit = 5`, `maxLimit = 500`, `backoffRatio = 0.7`, `errorRateThreshold = 0.1`, `minUtilizationThreshold = 0.6`, `windowedIncrease = true`, `smoothingTimeConstant = 2 s`. |
-| `a.vegas(v -> {})`           | `initialLimit = 50`, `minLimit = 5`, `maxLimit = 500`, `smoothingTimeConstant = 1 s`, `baselineDriftTimeConstant = 10 s`, `errorRateSmoothingTimeConstant = 5 s`, `errorRateThreshold = 0.1`, `minUtilizationThreshold = 0.6`. |
+| Sub-block                          | Defaults applied                                                                                                                                                                                  |
+|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `b.semaphore()`                    | No fields of its own — draws `maxConcurrentCalls` and `maxWaitDuration` from the top-level builder's [presets](#presets) or setters.                                                              |
+| `b.codel(c -> {})`                 | `targetDelay = 50 ms`, `interval = 500 ms`.                                                                                                                                                       |
+| `a.aimd(x -> x.protective())`      | `initialLimit = 20`, `minLimit = 1`, `maxLimit = 200`, `backoffRatio = 0.5`, `smoothingTimeConstant = 5 s`, `errorRateThreshold = 0.15`, `windowedIncrease = true`, `minUtilizationThreshold = 0.5`. |
+| `a.aimd(x -> x.balanced())`        | `initialLimit = 50`, `minLimit = 5`, `maxLimit = 500`, `backoffRatio = 0.7`, `smoothingTimeConstant = 2 s`, `errorRateThreshold = 0.1`, `windowedIncrease = true`, `minUtilizationThreshold = 0.6`. Also the empty-lambda default. |
+| `a.aimd(x -> x.permissive())`      | `initialLimit = 100`, `minLimit = 10`, `maxLimit = 1000`, `backoffRatio = 0.85`, `smoothingTimeConstant = 1 s`, `errorRateThreshold = 0.05`, `windowedIncrease = false`, `minUtilizationThreshold = 0.75`. |
+| `a.vegas(v -> v.protective())`     | `initialLimit = 20`, `minLimit = 1`, `maxLimit = 200`, `smoothingTimeConstant = 2 s`, `baselineDriftTimeConstant = 30 s`, `errorRateSmoothingTimeConstant = 10 s`, `errorRateThreshold = 0.15`, `minUtilizationThreshold = 0.5`. |
+| `a.vegas(v -> v.balanced())`       | `initialLimit = 50`, `minLimit = 5`, `maxLimit = 500`, `smoothingTimeConstant = 1 s`, `baselineDriftTimeConstant = 10 s`, `errorRateSmoothingTimeConstant = 5 s`, `errorRateThreshold = 0.1`, `minUtilizationThreshold = 0.6`. Also the empty-lambda default. |
+| `a.vegas(v -> v.permissive())`     | `initialLimit = 100`, `minLimit = 10`, `maxLimit = 1000`, `smoothingTimeConstant = 500 ms`, `baselineDriftTimeConstant = 5 s`, `errorRateSmoothingTimeConstant = 3 s`, `errorRateThreshold = 0.05`, `minUtilizationThreshold = 0.75`. |
 
-There is no `protective` or `permissive` analogue at the strategy level — the sub-builders have a single baseline.
-Refine individual fields when a different starting point is needed. Top-level [presets](#presets) configure capacity
-(`maxConcurrentCalls`, `maxWaitDuration`); the strategy sub-builders configure the permit-management algorithm. The
-two layers compose freely.
+Top-level [presets](#presets) configure capacity (`maxConcurrentCalls`, `maxWaitDuration`); the algorithm sub-builders
+configure the permit-management algorithm. The two layers compose freely — typical usage pairs a top-level preset with
+the matching algorithm preset:
+
+```java
+.bulkhead("payments", b -> b
+    .protective()
+    .adaptive(a -> a.aimd(x -> x.protective())))
+```
+
+The same preset-then-customize discipline applies on both layers: a preset is a baseline and must come *before* any
+per-field setter. Calling `.aimd(x -> x.maxLimit(150).protective())` throws `IllegalStateException` — refining works
+the other way around: `.aimd(x -> x.protective().maxLimit(150))`.
 
 ## Live tunability
 
