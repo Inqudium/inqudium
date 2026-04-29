@@ -23,6 +23,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-annotation</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Uses InqElementType, InqElement, InqPipeline, PipelineOrdering -->
@@ -30,6 +31,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-core</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Test -->

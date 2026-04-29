@@ -105,46 +105,54 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-core</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-config</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-aspect</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
                 <optional>true</optional>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-spring-boot</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
                 <optional>true</optional>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-annotation</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
                 <optional>true</optional>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-annotation-support</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
                 <optional>true</optional>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-imperative</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
                 <optional>true</optional>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-spring</artifactId>
                 <version>${project.version}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Kotlin -->
@@ -177,6 +185,7 @@
                 <groupId>io.reactivex.rxjava3</groupId>
                 <artifactId>rxjava</artifactId>
                 <version>${rxjava3.version}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Logging (MDC propagation, ADR-011) -->
@@ -184,11 +193,13 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Spring Boot -->
@@ -203,6 +214,7 @@
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-aop</artifactId>
                 <version>${spring.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>org.aspectj</groupId>

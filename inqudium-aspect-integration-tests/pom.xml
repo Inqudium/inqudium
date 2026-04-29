@@ -30,6 +30,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-aspect</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- ========================= -->
@@ -39,6 +40,7 @@
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjrt</artifactId>
             <version>${aspectj.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- ========================= -->

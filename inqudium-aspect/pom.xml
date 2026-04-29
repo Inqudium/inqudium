@@ -23,6 +23,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-core</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- ========================= -->
@@ -32,6 +33,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-imperative</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
@@ -47,6 +49,7 @@
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjweaver</artifactId>
             <version>${aspectj.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- ========================= -->

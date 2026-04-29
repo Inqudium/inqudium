@@ -27,6 +27,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-annotation-support</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- AsyncPipelineTerminal for hybrid sync/async dispatch -->
@@ -34,6 +35,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-imperative</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 

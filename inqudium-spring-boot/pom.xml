@@ -23,16 +23,19 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-annotation</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-annotation-support</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-spring</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- AsyncPipelineTerminal for hybrid sync/async dispatch -->
@@ -40,6 +43,7 @@
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-imperative</artifactId>
             <version>${project.version}</version>
+            <scope>compile</scope>
             <optional>true</optional>
         </dependency>
         <dependency>
@@ -52,12 +56,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Spring AOP for @Aspect support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aspectj</artifactId>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Test -->

@@ -20,10 +20,12 @@
         <dependency>
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-core</artifactId>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
