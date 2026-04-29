@@ -22,11 +22,13 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-core</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-aspect</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Imperative elements -->
@@ -34,26 +36,31 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-circuitbreaker</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-retry</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-ratelimiter</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-bulkhead</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-timelimiter</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Native paradigm implementations -->
@@ -61,16 +68,19 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-kotlin</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-reactor</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-rxjava3</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Integrations -->
@@ -78,6 +88,7 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-spring-boot</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
 
             <!-- Context bridges -->
@@ -85,6 +96,7 @@
                 <groupId>eu.inqudium</groupId>
                 <artifactId>inqudium-context-slf4j</artifactId>
                 <version>${revision}</version>
+                <scope>compile</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
