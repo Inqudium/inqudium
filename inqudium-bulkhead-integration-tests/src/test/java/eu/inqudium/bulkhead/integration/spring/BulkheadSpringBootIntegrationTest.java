@@ -22,8 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Bulkhead end-to-end through Spring Boot auto-configuration (audit finding F-2.19-7 routed
- * into REFACTORING.md sub-step 2.20).
+ * Bulkhead end-to-end through Spring Boot auto-configuration (audit finding F-2.19-7).
  *
  * <p>The test wires a real {@link InqRuntime} as a Spring bean, exposes the bulkhead handle
  * as an {@link InqElement}, and exercises a service annotated with {@code @InqBulkhead}.

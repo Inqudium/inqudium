@@ -180,8 +180,8 @@ class BulkheadPatchTest {
         @Test
         void should_allow_clearing_the_preset_label_via_explicit_null_touch() {
             // What is to be tested: that touching derivedFromPreset with null produces a snapshot
-            // whose preset is null. Why: clarification 3 in REFACTORING.md says no clearPreset()
-            // setter is needed — touching the field with null is the canonical way to reset it.
+            // whose preset is null. Why: no clearPreset() setter is needed — touching the field
+            // with null is the canonical way to reset it.
             // Why important: format adapters (YAML, JSON) may want to remove a preset reference
             // explicitly; the touch+null path is their entry point.
 
@@ -442,9 +442,9 @@ class BulkheadPatchTest {
         @Test
         void should_omit_untouched_fields() {
             // What is to be tested: that fields the patch did not touch do not appear in the map,
-            // not even with a default or null value. Why: clarification 5 in REFACTORING.md is
-            // explicit — proposedValues exposes proposals, not the full snapshot; the dispatcher
-            // pairs absent keys with the base snapshot's value, not with null.
+            // not even with a default or null value. Why: proposedValues exposes proposals, not
+            // the full snapshot; the dispatcher pairs absent keys with the base snapshot's
+            // value, not with null.
             // Why important: a listener treating "key absent" as "field set to null" would
             // misjudge every patch that only touches a subset of fields.
 

@@ -35,8 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Permit-rollback contract for event-publish failures during bulkhead acquire (REFACTORING.md
- * 2.9). The publishes that run while a permit is held — the success-branch
+ * Permit-rollback contract for event-publish failures during bulkhead acquire. The
+ * publishes that run while a permit is held — the success-branch
  * {@link BulkheadWaitTraceEvent} and the {@link BulkheadOnAcquireEvent} — must release the
  * permit on a publish failure, optionally emit a {@link BulkheadRollbackTraceEvent}, and
  * surface the original failure as
@@ -89,7 +89,7 @@ class BulkheadRollbackTest {
             // publisher, (c) BulkheadEventPublishFailureException to the caller carrying the
             // original RuntimeException as cause, and (d) the user lambda must not have run —
             // the bulkhead never delegated to next.execute.
-            // Why important: this is the headline contract of REFACTORING.md 2.9 — a defective
+            // Why important: this is the headline contract of the rollback path — a defective
             // observability stack must not corrupt the bulkhead's permit accounting nor silently
             // run a downstream call the operator never intended to permit-track.
 

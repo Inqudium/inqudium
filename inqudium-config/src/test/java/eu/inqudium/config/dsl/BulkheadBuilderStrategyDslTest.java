@@ -22,8 +22,8 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
  * Coverage for the four strategy setters on {@link BulkheadBuilder}: {@code semaphore()},
- * {@code codel(...)}, {@code adaptive(...)}, {@code adaptiveNonBlocking(...)} (REFACTORING.md
- * 2.10.C). Tests apply the builder's patch to a fixed system-default snapshot and inspect
+ * {@code codel(...)}, {@code adaptive(...)}, {@code adaptiveNonBlocking(...)}. Tests apply
+ * the builder's patch to a fixed system-default snapshot and inspect
  * {@code snapshot.strategy()}.
  */
 @DisplayName("BulkheadBuilder strategy DSL")

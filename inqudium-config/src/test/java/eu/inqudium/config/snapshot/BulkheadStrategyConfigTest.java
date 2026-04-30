@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
  * Compact-constructor invariants and basic identity for the sealed
- * {@link BulkheadStrategyConfig} hierarchy introduced in REFACTORING.md 2.10.A.
+ * {@link BulkheadStrategyConfig} hierarchy.
  */
 @DisplayName("BulkheadStrategyConfig hierarchy")
 class BulkheadStrategyConfigTest {

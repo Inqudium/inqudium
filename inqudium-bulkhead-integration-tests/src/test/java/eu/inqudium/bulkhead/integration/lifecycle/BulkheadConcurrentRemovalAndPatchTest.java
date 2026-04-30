@@ -19,8 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Race-condition coverage for the bulkhead's lifecycle (audit finding 2.12.3 routed into
- * REFACTORING.md sub-step 2.20).
+ * Race-condition coverage for the bulkhead's lifecycle (audit finding 2.12.3).
  *
  * <p>The scenario: one thread issues runtime patches that re-tune the live snapshot while
  * another thread structurally removes the same bulkhead. The live container's CAS plus the
