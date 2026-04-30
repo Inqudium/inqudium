@@ -28,8 +28,7 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Failure-mode pinning tests for {@link BulkheadHotPhase} (audit finding 2.12.4 routed into
- * REFACTORING.md sub-step 2.20 follow-up).
+ * Failure-mode pinning tests for {@link BulkheadHotPhase} (audit finding 2.12.4 follow-up).
  *
  * <p>The test sits inside the bulkhead's own production package so the package-private
  * {@link BulkheadHotPhase#BulkheadHotPhase(InqBulkhead, eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy)

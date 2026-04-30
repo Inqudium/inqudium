@@ -80,7 +80,7 @@ class RuntimeUpdateTest {
                         .as("balanced preset's maxWaitDuration is preserved")
                         .isEqualTo(Duration.ofMillis(500));
                 assertThat(snap.derivedFromPreset())
-                        .as("preset label inherited per clarification 3 in REFACTORING.md")
+                        .as("preset label inherited from the base snapshot")
                         .isEqualTo("balanced");
             }
         }

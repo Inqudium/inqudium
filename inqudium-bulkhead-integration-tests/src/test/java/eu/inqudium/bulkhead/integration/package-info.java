@@ -11,7 +11,7 @@
  * complete stack. Module-internal collaborators (synthetic strategies, throwing closeables,
  * tiny test-only services) live as static nested types on the test classes that need them.
  *
- * <p>Closes the audit findings carried forward into REFACTORING.md sub-step 2.20:
+ * <p>Closes the following carried-forward audit findings:
  * <ul>
  *   <li>2.12.3 — race between {@code markRemoved} and {@code onSnapshotChange} during
  *       hot-swap.</li>

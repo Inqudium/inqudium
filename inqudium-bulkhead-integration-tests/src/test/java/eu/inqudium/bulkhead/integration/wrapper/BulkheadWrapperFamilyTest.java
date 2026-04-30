@@ -23,8 +23,7 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Wrapper- and proxy-family coverage with a real bulkhead (audit finding 2.17.4 routed into
- * REFACTORING.md sub-step 2.20).
+ * Wrapper- and proxy-family coverage with a real bulkhead (audit finding 2.17.4).
  *
  * <p>Before ADR-033 these tests had to use synthetic {@code LayerAction} lambdas because
  * {@code InqBulkhead} did not implement {@link InqDecorator}; the audit tracked this as a

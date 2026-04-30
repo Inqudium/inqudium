@@ -43,6 +43,13 @@ final class BulkheadStrategyFactory {
     /**
      * Materialize the strategy a hot-phase needs to serve its bulkhead.
      *
+     * Defense-in-depth: if BulkheadStrategyFactory.create(...) ever throws,
+     * the cold→hot CAS is not reached and the phase remains on ColdPhase.
+     * As of 2026-04-30, no production strategy config can trigger this path —
+     * all sealed BulkheadStrategyConfig variants and their snapshot-validated parameters
+     * reject construction-throwing values upstream. The code remains as a forward-looking
+     * guard against future config variants.
+     *
      * @param snapshot the bulkhead's current snapshot; supplies {@code maxConcurrentCalls} as the
      *                 starting limit and the strategy-config discriminator.
      * @param general  the runtime-level snapshot supplying the cross-cutting collaborators a
