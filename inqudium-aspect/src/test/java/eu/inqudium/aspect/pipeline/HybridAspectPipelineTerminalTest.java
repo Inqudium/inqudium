@@ -1,10 +1,13 @@
 package eu.inqudium.aspect.pipeline;
 
+import eu.inqudium.config.Inqudium;
+import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
 import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -521,6 +524,85 @@ class HybridAspectPipelineTerminalTest {
             // When / Then — first call builds cache, second reuses it
             assertThat(terminal.executeAround(syncPjp("first"))).isEqualTo("first");
             assertThat(terminal.executeAround(syncPjp("second"))).isEqualTo("second");
+        }
+    }
+
+    // =========================================================================
+    // F-2.18-1 — InqBulkhead acceptance regression pin
+    // =========================================================================
+
+    @Nested
+    @DisplayName("F-2.18-1 — InqBulkhead acceptance in the pipeline")
+    class BulkheadAsyncDecoratorAcceptance {
+
+        // What is to be tested: that HybridAspectPipelineTerminal.of(...) accepts a pipeline
+        // that contains a real InqBulkhead. Before InqBulkhead implemented InqAsyncDecorator,
+        // the eager validation in the terminal's constructor (asAsyncDecorator(element))
+        // failed with a ClassCastException at construction time — even when the intercepted
+        // method was synchronous and the async path was never entered. The two tests below
+        // pin that the construction-time failure is gone, in both single-element and
+        // mixed-pipeline configurations.
+        // Why successful: HybridAspectPipelineTerminal.of(pipeline) returns a non-null
+        // terminal without throwing — the cast in asAsyncDecorator now succeeds because
+        // InqBulkhead implements InqAsyncDecorator. The terminal does not need to be
+        // executed; the regression's failure mode was at construction time.
+        // Why important: a future refactor that accidentally drops "implements
+        // InqAsyncDecorator" from InqBulkhead would silently re-introduce the audit
+        // finding. These tests fail loudly at construction if that happens, which is
+        // exactly when the original bug surfaced.
+
+        @Test
+        @DisplayName("F-2.18-1 — terminal construction with only an InqBulkhead in the pipeline")
+        void should_construct_terminal_when_pipeline_contains_only_an_InqBulkhead() {
+            // Given — a real InqBulkhead built through the standard runtime DSL
+            try (InqRuntime runtime = Inqudium.configure()
+                    .imperative(im -> im.bulkhead("payments", b -> b.balanced()))
+                    .build()) {
+                @SuppressWarnings("unchecked")
+                InqBulkhead<Void, Object> bulkhead =
+                        (InqBulkhead<Void, Object>) runtime.imperative().bulkhead("payments");
+
+                // When
+                HybridAspectPipelineTerminal terminal = HybridAspectPipelineTerminal.of(
+                        InqPipeline.builder()
+                                .shield(bulkhead)
+                                .build());
+
+                // Then — construction succeeded, no ClassCastException
+                assertThat(terminal).isNotNull();
+                assertThat(terminal.depth()).isEqualTo(1);
+                assertThat(terminal.layerNames()).containsExactly("BULKHEAD(payments)");
+            }
+        }
+
+        @Test
+        @DisplayName("F-2.18-1 — terminal construction with an InqBulkhead alongside other elements")
+        void should_construct_terminal_when_pipeline_contains_an_InqBulkhead_alongside_other_elements() {
+            // Given — an InqBulkhead next to a non-bulkhead element. The DualDecorator stub
+            // satisfies both decorator contracts for the "other element" slot; the point is
+            // to prove the terminal accepts a mixed pipeline that includes a real
+            // InqBulkhead, not to exercise pipeline composition behaviour.
+            try (InqRuntime runtime = Inqudium.configure()
+                    .imperative(im -> im.bulkhead("payments", b -> b.balanced()))
+                    .build()) {
+                @SuppressWarnings("unchecked")
+                InqBulkhead<Void, Object> bulkhead =
+                        (InqBulkhead<Void, Object>) runtime.imperative().bulkhead("payments");
+                List<String> trace = new ArrayList<>();
+
+                // When
+                HybridAspectPipelineTerminal terminal = HybridAspectPipelineTerminal.of(
+                        InqPipeline.builder()
+                                .shield(bulkhead)
+                                .shield(new DualDecorator("CB", InqElementType.CIRCUIT_BREAKER, trace))
+                                .build());
+
+                // Then — construction succeeded for the mixed pipeline
+                assertThat(terminal).isNotNull();
+                assertThat(terminal.depth()).isEqualTo(2);
+                assertThat(terminal.layerNames())
+                        .containsExactly("BULKHEAD(payments)", "CIRCUIT_BREAKER(CB)");
+            }
         }
     }
 }
