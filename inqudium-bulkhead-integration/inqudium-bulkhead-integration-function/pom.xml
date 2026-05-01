@@ -14,7 +14,32 @@
     <description>
         Function-based bulkhead integration example — no framework, no DI, no AspectJ.
         Demonstrates the canonical Inqudium function-decoration pattern against a tiny
-        webshop OrderService. Stub at sub-step 5.A; populated in 5.B.
+        webshop OrderService.
     </description>
+
+    <dependencies>
+
+        <!-- ========================= -->
+        <!--  Modules under demonstration -->
+        <!-- ========================= -->
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-core</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-config</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-imperative</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- JUnit 5 + AssertJ are inherited as test-scope from the root parent POM. -->
+
+    </dependencies>
 
 </project>
