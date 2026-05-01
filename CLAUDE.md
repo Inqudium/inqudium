@@ -166,3 +166,5 @@ Before adding a TODO, check both gates:
 If neither gate is met, the change is not a TODO. It is a known cleanup that belongs in the current commit or in an immediately-following one. Reviewer feedback in particular should not be funneled into TODO comments unless one of the two gates is genuinely met.
 
 When a TODO is genuinely warranted, it carries a phase tag (`TODO(1.9):`, `TODO(3.4):`) or a clear next-action description. "TODO: revisit" without specifics is not acceptable.
+
+For multi-step refactors involving a separate review/planning Claude session, see WORKFLOW.md
