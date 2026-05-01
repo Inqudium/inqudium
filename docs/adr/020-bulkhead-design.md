@@ -141,14 +141,21 @@ instances are bound to a single bulkhead instance for that bulkhead's lifetime.
 
 **Paradigm wiring.** A paradigm module accepts only the contract that fits:
 
-| Paradigm                | Strategy contract                                            |
-|-------------------------|--------------------------------------------------------------|
-| Imperative              | `BlockingBulkheadStrategy`                                   |
-| Reactive (Reactor/Rx3)  | `NonBlockingBulkheadStrategy`                                |
-| Kotlin coroutines       | `NonBlockingBulkheadStrategy` (avoids carrier-thread pinning)|
+| Paradigm                | Strategy contract                                                                |
+|-------------------------|----------------------------------------------------------------------------------|
+| Imperative              | `BlockingBulkheadStrategy` or `NonBlockingBulkheadStrategy` (runtime-dispatched) |
+| Reactive (Reactor/Rx3)  | `NonBlockingBulkheadStrategy`                                                    |
+| Kotlin coroutines       | `NonBlockingBulkheadStrategy` (avoids carrier-thread pinning)                    |
 
-Mixing is rejected by the compile-time contract: the imperative `ImperativeBulkhead` constructor takes a
-`BlockingBulkheadStrategy` and would not accept a `NonBlockingBulkheadStrategy`, and vice versa.
+Mixing is rejected by the paradigm-level wiring rule rather than at any single constructor signature: the
+reactive paradigm modules accept only `NonBlockingBulkheadStrategy` and reject the blocking direction. The
+deprecated `ImperativeBulkhead` enforced the symmetric one-directional rule for imperative at the constructor
+level — its `BlockingBulkheadStrategy` parameter would not accept a `NonBlockingBulkheadStrategy` — and is
+retained until the legacy `Bulkhead.of(...)` factory is dismantled. The new `InqBulkhead` relaxes the imperative
+side: its hot phase dispatches over both contracts via `instanceof`, and the snapshot-driven
+`BulkheadStrategyFactory` materializes whichever strategy the sealed `BulkheadStrategyConfig` variant selects (a
+non-blocking adaptive variant included). The paradigm-level mismatch — a reactive bulkhead pointed at a
+blocking strategy — remains rejected.
 
 #### Why the split is in `inqudium-core`, not in paradigm modules
 
@@ -278,7 +285,7 @@ The two methods are mechanically identical (decrement the active count) but sema
 - `rollback()` — the permit was acquired, but the *acquire-side telemetry* failed (an event publisher threw) and the
   business call never started. The rollback exists so the failed publish doesn't leak permits.
 
-`ImperativeBulkhead` uses both: a normal completion calls `release()` from the `finally` block; a thrown
+`InqBulkhead` uses both: a normal completion calls `release()` from the `finally` block; a thrown
 `BulkheadOnAcquireEvent` publish triggers `rollback()` plus an optional `BulkheadRollbackTraceEvent` (TRACE) before
 the original exception propagates.
 
@@ -337,10 +344,18 @@ Defaults:
 
 ### Bulkhead facade — sync and async
 
-The imperative facade is `ImperativeBulkhead<A, R>`, which implements both `InqDecorator` (sync `execute`) and
-`InqAsyncDecorator` (async `executeAsync`). The same instance handles both call styles.
+The imperative facade is `InqBulkhead<A, R>`, which implements both `InqDecorator` (sync `execute`) and
+`InqAsyncDecorator` (async `executeAsync`). The same instance handles both call styles. The facade itself owns the
+lifecycle scaffolding and delegates the actual permit work to a `BulkheadHotPhase` constructed at the cold-to-hot
+transition (ADR-029); the deprecated `ImperativeBulkhead` retains the same dual-contract shape and remains
+constructible via the legacy `Bulkhead.of(...)` static factory until that factory is dismantled.
 
 #### Synchronous path
+
+The algorithmic shape inside the hot phase looks like the snippet below — the facade's `execute(...)` reduces to
+`phase.get().execute(...)` after the lifecycle base class clears the cold-to-hot CAS, and the snippet shows what the
+hot phase's `execute(...)` then runs. Helper names like `handleAcquireFailure` and `releaseAndReport` are
+hot-phase-internal, not facade methods.
 
 ```java
 @Override
@@ -386,6 +401,10 @@ Notable points beyond a trivial acquire/execute/release:
   feedback ordering for adaptive strategies). Algorithm-hook failures are logged but never block the release.
 
 #### Asynchronous path
+
+Same framing as the sync block: the facade delegates through the lifecycle base class to the hot phase, and the
+sketch below describes the hot-phase logic. The base class detects the hot phase's
+`AsyncImperativePhase` capability (ADR-029) and routes `executeAsync(...)` accordingly.
 
 ```java
 @Override

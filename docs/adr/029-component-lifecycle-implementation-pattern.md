@@ -222,6 +222,32 @@ registrations, no resource acquisition that survives garbage collection — prec
 candidates are safe. Side effects like the `ComponentBecameHotEvent` happen *after* the successful CAS, in
 the base class, exactly once.
 
+#### Async dispatch capability
+
+Hot phases that support the async pipeline contract additionally implement
+`AsyncImperativePhase<A, R>`, a capability interface paralleling `ImperativePhase<A, R>`:
+
+```java
+public interface AsyncImperativePhase<A, R> extends ImperativePhase<A, R> {
+    CompletionStage<R> executeAsync(
+            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next);
+}
+```
+
+The base class's `executeAsync(...)` dispatch checks whether the current phase implements
+`AsyncImperativePhase` and, if so, routes the call to its `executeAsync(...)`; otherwise it throws
+`UnsupportedOperationException` synchronously, identifying the offending phase class and naming
+`AsyncImperativePhase` as the opt-in to add. The throw is synchronous on purpose — the caller has not
+yet received a `CompletionStage`, so there is no detached failed-future branch on which the error can be
+silently swallowed. The `ColdPhase` itself implements both interfaces so a first-call cold-to-hot
+transition out of either dispatch path goes through the same CAS-and-publish sequence.
+
+The capability split is opt-in. Imperative components whose hot phases support both call styles
+implement both `ImperativePhase` and `AsyncImperativePhase` (currently `BulkheadHotPhase` does so);
+components added later whose async path is not yet implemented simply omit `AsyncImperativePhase` and
+inherit the throw-on-async fallback for free, making the missing capability explicit at first call
+rather than silently absorbed.
+
 ### The concrete component
 
 A bulkhead implementation using this base class:
@@ -229,69 +255,101 @@ A bulkhead implementation using this base class:
 ```java
 package eu.inqudium.imperative.bulkhead;
 
-public final class InqBulkhead
-        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot>
-        implements Bulkhead {
+public final class InqBulkhead<A, R>
+        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot, A, R>
+        implements BulkheadHandle<ImperativeTag>,
+                   InqExecutor<A, R>,
+                   InqDecorator<A, R>,
+                   InqAsyncDecorator<A, R> {
 
     public InqBulkhead(
-            String name,
             LiveContainer<BulkheadSnapshot> live,
-            InqEventPublisher eventPublisher) {
-        super(name, live, eventPublisher);
+            GeneralSnapshot general) {
+        super(
+                live.snapshot().name(),
+                InqElementType.BULKHEAD,
+                live,
+                general.eventPublisher(),
+                general.clock());
+        // ...further per-component collaborators (per-component publisher, clock, nano source)
     }
 
     @Override
-    protected ImperativePhase createHotPhase() {
+    protected ImperativePhase<A, R> createHotPhase() {
         // Read the current snapshot to construct the hot phase from up-to-date config.
-        // No side effects here; pure construction.
-        BulkheadSnapshot s = snapshot();
-        return new BulkheadHotPhase(this, s);
+        // No side effects here; pure construction. Subscriptions land in the hot phase's
+        // afterCommit() hook so discarded CAS candidates leave nothing behind.
+        return new BulkheadHotPhase<>(this, snapshot());
     }
 
-    // Bulkhead-specific public methods that read state through the snapshot.
-    @Override
-    public int getAvailablePermits() {
-        ImperativePhase p = currentPhase();
-        return p instanceof BulkheadHotPhase hot ? hot.availablePermits() : snapshot().maxConcurrentCalls();
+    // Phase-aware accessor: read from the live strategy when hot, fall back to the snapshot
+    // when cold so observers see a continuous value across the transition.
+    public int availablePermits() {
+        ensureNotRemoved();
+        ImperativePhase<A, R> p = currentPhase();
+        return p instanceof BulkheadHotPhase<?, ?> hot
+                ? hot.availablePermits()
+                : coldPhaseLimit(snapshot());
     }
-
-    // ...
-
-    // Package-private accessor used by the cold phase via the base class.
-    private ImperativePhase currentPhase() { ... }
 }
 ```
 
-The hot phase carries the bulkhead-specific runtime state:
+The hot phase carries the bulkhead-specific runtime state and opts into the async pipeline contract by
+implementing `AsyncImperativePhase`. It also implements `PostCommitInitializable` so the base class only
+subscribes the phase to the live container after the CAS commits — discarded candidates leave nothing behind:
 
 ```java
 package eu.inqudium.imperative.bulkhead;
 
-final class BulkheadHotPhase
-        implements ImperativeLifecyclePhasedComponent.ImperativePhase,
-                   ImperativeLifecyclePhasedComponent.HotPhaseMarker {
+final class BulkheadHotPhase<A, R>
+        implements AsyncImperativePhase<A, R>,
+                   HotPhaseMarker,
+                   PostCommitInitializable,
+                   InternalMutabilityCheck<BulkheadSnapshot>,
+                   ShutdownAware {
 
-    private final InqBulkhead component;       // back-reference to the base class for shared resources
-    private final BlockingBulkheadStrategy strategy;   // the composed strategy (see architectural rule)
+    private final InqBulkhead<A, R> component;          // back-reference for shared resources
+    private volatile BulkheadStrategy strategy;         // composed strategy (see architectural rule);
+                                                        // volatile so a hot-swap is one atomic write
+    private volatile AutoCloseable subscription;
 
-    BulkheadHotPhase(InqBulkhead component, BulkheadSnapshot snapshot) {
+    BulkheadHotPhase(InqBulkhead<A, R> component, BulkheadSnapshot snapshot) {
+        // Side-effect-free per ADR-029: no publishes, no subscriptions. A discarded candidate is
+        // safe to garbage-collect.
         this.component = component;
-        this.strategy = StrategyFactory.create(snapshot);
-        // Subscribe to snapshot changes — but only after the CAS commits this phase.
-        // The base class arranges this via a post-commit hook (see "Snapshot subscription" below).
+        this.strategy = BulkheadStrategyFactory.create(snapshot, component.general());
     }
 
     @Override
-    public Object execute(long chainId, long callId, Object argument, InternalExecutor next) {
-        Permit p = strategy.tryAcquire(component.snapshot());
-        if (!p.granted()) {
-            throw new BulkheadFullException(component.name());
+    public void afterCommit(LiveContainer<?> live) {
+        // Runs exactly once on the winning CAS candidate. Subscribing here keeps discarded
+        // candidates free of dangling listeners.
+        @SuppressWarnings("unchecked")
+        var typed = (LiveContainer<BulkheadSnapshot>) live;
+        this.subscription = typed.subscribe(this::onSnapshotChange);
+    }
+
+    @Override
+    public R execute(long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+        // tryAcquire returns null on a granted permit, a RejectionContext on rejection.
+        RejectionContext rejection = tryAcquire(component.snapshot().maxWaitDuration());
+        if (rejection != null) {
+            throw new InqBulkheadFullException(chainId, callId, component.name(), rejection, ...);
         }
         try {
             return next.execute(chainId, callId, argument);
         } finally {
-            p.release();
+            strategy.release();
         }
+    }
+
+    @Override
+    public CompletionStage<R> executeAsync(
+            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next) {
+        // Acquire synchronously (back-pressure visible to the caller), release on stage
+        // completion via whenComplete (ADR-023 — return the decorated copy, fast-path the
+        // already-completed case). Full body in the imperative module.
+        // ...
     }
 
     int availablePermits() {
@@ -354,7 +412,13 @@ pattern: inherit the lifecycle base, compose the strategy.
 
 The four paradigm base classes share the structure described above but differ in three key respects:
 
-**Imperative.** Methods return values directly; the cold phase performs the CAS and delegates synchronously.
+**Imperative.** Methods return values directly (sync `execute`) or return an eager-started
+`CompletionStage` (async `executeAsync`). The cold phase performs the CAS and delegates in both cases —
+for the sync path, the delegation runs synchronously and returns the value; for the async path, the
+delegation runs synchronously through stage construction (the start phase of the two-phase around-advice)
+and returns a `CompletionStage` whose end-phase callback fires on completion. The trigger for the
+cold-to-hot transition is the method-call moment in both cases, since `CompletionStage`-returning calls
+are eager under our usage; the trigger does NOT defer to stage completion.
 
 **Reactive.** Methods return `Mono`/`Flux`. The cold phase can defer the CAS to subscription time:
 
@@ -373,7 +437,7 @@ public Mono<Object> execute(...) {
 
 This deferral matters: a reactive bulkhead constructed but never subscribed to never transitions. The cold
 phase remains, no hot-phase resources are allocated. This is a genuine semantic match with reactive
-laziness.
+laziness — and unlike the imperative async path, which is eager and fires the cold-to-hot trigger at call time.
 
 **RxJava3.** Similar to reactive but with RxJava3-specific `Single`/`Observable` types and a slightly
 different subscription model.

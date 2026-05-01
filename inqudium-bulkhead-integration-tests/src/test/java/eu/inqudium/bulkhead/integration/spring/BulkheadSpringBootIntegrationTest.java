@@ -15,10 +15,13 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -99,6 +102,16 @@ class BulkheadSpringBootIntegrationTest {
             }
             return "released";
         }
+
+        /**
+         * Async-returning variant used by the F-2.19-6 regression pin. The
+         * downstream stage is manually completed so the assertion does not
+         * depend on scheduling.
+         */
+        @InqBulkhead("orderBh")
+        public CompletionStage<String> placeOrderAsync(String item) {
+            return CompletableFuture.completedFuture("async-ordered:" + item);
+        }
     }
 
     @Autowired
@@ -174,5 +187,44 @@ class BulkheadSpringBootIntegrationTest {
 
         InqElement bean = (InqElement) runtime.imperative().bulkhead("orderBh");
         assertThat(bean.name()).isEqualTo("orderBh");
+    }
+
+    @Test
+    @DisplayName("F-2.19-6 — InqShieldAspect async dispatch through InqBulkhead")
+    void should_intercept_an_async_returning_method_with_an_InqBulkhead_without_class_cast_exception() {
+        // What is to be tested: a Spring-managed service exposes a CompletionStage-returning
+        // method annotated with @InqBulkhead("orderBh"). InqShieldAspect's async-method
+        // dispatch path casts each pipeline element to InqAsyncDecorator. Before InqBulkhead
+        // implemented InqAsyncDecorator, this cast threw ClassCastException at first
+        // invocation — the audit-2.19 finding F-2.19-6.
+        // Why successful: the async invocation completes without ClassCastException, the
+        // returned stage carries the expected value, and the bulkhead's permit count returns
+        // to zero on stage completion.
+        // Why important: a future refactor that drops "implements InqAsyncDecorator" from
+        // InqBulkhead would silently re-introduce the runtime cast failure on every async
+        // call through the aspect. This test fails loudly at first invocation if that
+        // happens.
+
+        // Given — the orderBh bulkhead and the OrderService bean wired through Spring,
+        // routed through InqShieldAspect's @Around advice on the async method.
+
+        // When / Then — first invocation must not throw a ClassCastException synchronously
+        // through the aspect's async-dispatch path
+        assertThatCode(() -> orderService.placeOrderAsync("Widget"))
+                .doesNotThrowAnyException();
+
+        // And — the stage propagates the value end-to-end
+        CompletionStage<String> stage = orderService.placeOrderAsync("Widget");
+        String result = stage.toCompletableFuture().join();
+        assertThat(result).isEqualTo("async-ordered:Widget");
+
+        // And — permit released on stage completion
+        @SuppressWarnings("unchecked")
+        eu.inqudium.imperative.bulkhead.InqBulkhead<Void, Object> bh =
+                (eu.inqudium.imperative.bulkhead.InqBulkhead<Void, Object>)
+                        runtime.imperative().bulkhead("orderBh");
+        assertThat(bh.concurrentCalls())
+                .as("permit released on stage completion")
+                .isZero();
     }
 }
