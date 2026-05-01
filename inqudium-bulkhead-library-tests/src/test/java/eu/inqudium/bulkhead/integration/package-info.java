@@ -1,10 +1,22 @@
 /**
- * End-to-end integration tests for the imperative bulkhead.
+ * Library-end-to-end tests for the imperative bulkhead.
  *
- * <p>This module exists to pin behaviours that no single module's own test suite covers:
- * the imperative bulkhead exercised through the full pipeline / wrapper / aspect / Spring Boot
- * stack at the same time. Each test class addresses one variant; method names describe one
- * user scenario. Reading the suite top-to-bottom is intended to feel like a tutorial.
+ * <p>The tests in this module exercise bulkhead library behaviour end-to-end under
+ * realistic conditions — concurrency races, lifecycle transitions (cold-to-hot, strategy
+ * hot-swap, structural removal), wrapper-family compatibility across the
+ * {@code decorateXxx} surface, and aspect-pipeline integration with a real bulkhead.
+ * Each test class addresses one variant; method names describe one user scenario.
+ * Reading the suite top-to-bottom is intended to feel like a tutorial of the library's
+ * end-to-end behaviour.
+ *
+ * <p><strong>These are NOT examples of how to test a user's application.</strong> For
+ * application-level test patterns, see the example modules under
+ * {@code inqudium-bulkhead-integration/}, each of which exercises a tiny webshop scenario
+ * through one integration style (function-based, JDK proxy, AspectJ, Spring Framework,
+ * Spring Boot) and tests its own behaviour the way a real application would. The
+ * library-end-to-end tests live here so a future reader is not tempted to copy them into
+ * their own test suite as a template — they are the library's safety net, not application
+ * test patterns.
  *
  * <p>The module produces no production artifact — it is the test-only counterpart to the
  * existing {@code inqudium-aspect-integration-tests} module, applied to the bulkhead's
