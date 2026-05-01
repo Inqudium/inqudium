@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Coverage for the generalized live-tunability check (REFACTORING.md 2.10.D). The
- * BulkheadHotPhase mutability check evaluates against the post-patch snapshot:
+ * Coverage for the generalized live-tunability check. The BulkheadHotPhase mutability
+ * check evaluates against the post-patch snapshot:
  * MAX_CONCURRENT_CALLS is live-tunable on Semaphore and only on Semaphore. Combined patches
  * that swap to Semaphore <em>and</em> tune the limit pass; isolated MAX_CONCURRENT_CALLS
  * patches on non-Semaphore strategies are vetoed with a clear reason.

@@ -55,8 +55,8 @@ class MultipleBulkheadsNoAggregateLimitRuleTest {
         void should_emit_finding_when_count_and_aggregate_both_exceed_thresholds() {
             // What is to be tested: 6 bulkheads × 50 permits each = 300 aggregate. Both axes
             // (count > 5 AND aggregate > 100) trigger the rule, so a finding is produced.
-            // Why important: this is the documented canary case from REFACTORING.md 2.6 — if it
-            // does not fire, the rule is broken or the threshold drifted.
+            // Why important: this is the documented canary case for the rule — if it does
+            // not fire, the rule is broken or the threshold drifted.
 
             // Given
             MultipleBulkheadsNoAggregateLimitRule rule =

@@ -30,8 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pinning tests for REFACTORING.md 2.13 — adaptive feedback wiring on
- * {@link BulkheadHotPhase#execute}. Each nested class targets one of the four 2.13 fixes:
+ * Pinning tests for adaptive feedback wiring on {@link BulkheadHotPhase#execute}. Each
+ * nested class targets one of the four feedback paths:
  *
  * <ul>
  *   <li><b>AdaptiveAlgorithmFeedback</b> — drives a real adaptive AIMD bulkhead through enough

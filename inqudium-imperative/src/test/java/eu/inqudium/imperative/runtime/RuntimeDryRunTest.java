@@ -109,7 +109,7 @@ class RuntimeDryRunTest {
             // Why important: materialization wires up a live container, an event publisher and
             // potentially listener subscriptions; a dryRun that leaked any of those would have
             // observable side effects on the runtime — exactly what dryRun is supposed to
-            // forbid (REFACTORING.md 2.5).
+            // forbid.
 
             try (InqRuntime runtime = Inqudium.configure().build()) {
 

@@ -25,8 +25,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end materialization for the four bulkhead strategy types (ADR-032 / REFACTORING.md
- * 2.10.B). For each strategy config the test wires a real {@link InqBulkhead}, warms it via
+ * End-to-end materialization for the four bulkhead strategy types (ADR-032). For each
+ * strategy config the test wires a real {@link InqBulkhead}, warms it via
  * {@code execute(...)}, and asserts that the strategy actually serves traffic. The strategy
  * itself is not directly inspectable from outside the bulkhead — these tests rely on the
  * functional contract (acquire, release, available permits) instead of casting the internal

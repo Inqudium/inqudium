@@ -25,9 +25,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage for the bulkhead hot-swap path (REFACTORING.md 2.10.D). The mutability
- * check vetoes a STRATEGY swap with in-flight calls; with zero in-flight, the swap commits
- * atomically and subsequent calls run on the new strategy.
+ * End-to-end coverage for the bulkhead hot-swap path. The mutability check vetoes a
+ * STRATEGY swap with in-flight calls; with zero in-flight, the swap commits atomically
+ * and subsequent calls run on the new strategy.
  */
 @DisplayName("Bulkhead strategy hot-swap")
 class BulkheadHotSwapTest {

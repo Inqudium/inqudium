@@ -20,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * AspectJ-pipeline lifecycle compatibility with a real bulkhead (audit finding F-2.18-3 routed
- * into REFACTORING.md sub-step 2.20).
+ * AspectJ-pipeline lifecycle compatibility with a real bulkhead (audit finding F-2.18-3).
  *
  * <p>The three lifecycle scenarios from {@code BulkheadWrapperLifecycleTest} are re-played here
  * through the aspect-pipeline path. The path under test is

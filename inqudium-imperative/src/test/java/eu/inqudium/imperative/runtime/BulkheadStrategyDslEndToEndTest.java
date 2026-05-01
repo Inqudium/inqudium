@@ -24,10 +24,10 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage for the four strategy setters on the imperative bulkhead DSL
- * (REFACTORING.md 2.10.C). Walks the full path: {@code Inqudium.configure().imperative(...)}
- * through to the live snapshot, plus the same path on {@code runtime.update(...)} to confirm
- * the update flow honours strategy patches.
+ * End-to-end coverage for the four strategy setters on the imperative bulkhead DSL.
+ * Walks the full path: {@code Inqudium.configure().imperative(...)} through to the live
+ * snapshot, plus the same path on {@code runtime.update(...)} to confirm the update flow
+ * honours strategy patches.
  */
 @DisplayName("Bulkhead strategy DSL end-to-end")
 class BulkheadStrategyDslEndToEndTest {
