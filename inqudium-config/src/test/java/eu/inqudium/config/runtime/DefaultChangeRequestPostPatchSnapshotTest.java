@@ -14,10 +14,10 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Coverage for the {@link ChangeRequest#postPatchSnapshot()} contract introduced in
- * REFACTORING.md 2.10.D. The post-patch snapshot is what the dispatcher precomputes once and
- * hands every listener and the component-internal mutability check; the contract is identity
- * with {@code patch.applyTo(currentSnapshot)} and idempotence across reads.
+ * Coverage for the {@link ChangeRequest#postPatchSnapshot()} contract. The post-patch
+ * snapshot is what the dispatcher precomputes once and hands every listener and the
+ * component-internal mutability check; the contract is identity with
+ * {@code patch.applyTo(currentSnapshot)} and idempotence across reads.
  */
 @DisplayName("DefaultChangeRequest.postPatchSnapshot")
 class DefaultChangeRequestPostPatchSnapshotTest {

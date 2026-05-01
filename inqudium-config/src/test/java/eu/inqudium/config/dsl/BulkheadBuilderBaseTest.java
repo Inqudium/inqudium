@@ -257,9 +257,9 @@ class BulkheadBuilderBaseTest {
 
         @Test
         void should_inherit_events_from_the_base_snapshot_when_not_explicitly_set() {
-            // What is to be tested: clarification analogous to derivedFromPreset (clarification
-            // 3 in REFACTORING.md) — a patch that does not call events() inherits the events
-            // value from the base snapshot. This is the central correctness property of
+            // What is to be tested: clarification analogous to derivedFromPreset — a patch
+            // that does not call events() inherits the events value from the base snapshot.
+            // This is the central correctness property of
             // updates: a runtime.update that only patches maxConcurrentCalls must not silently
             // overwrite the live snapshot's events.
             // Why successful: applying an empty-of-events patch against a base with allEnabled()
@@ -463,9 +463,9 @@ class BulkheadBuilderBaseTest {
 
         @Test
         void individual_setters_should_only_touch_their_own_field() {
-            // What is to be tested: clarification 3 in REFACTORING.md — individual setters do
-            // NOT touch derivedFromPreset, so a hot patch that only calls maxConcurrentCalls(15)
-            // inherits the previous preset label. The same inherit-from-base rule applies to
+            // What is to be tested: individual setters do NOT touch derivedFromPreset, so a
+            // hot patch that only calls maxConcurrentCalls(15) inherits the previous preset
+            // label. The same inherit-from-base rule applies to
             // tags and events — the constructor only touches NAME, every other field is
             // untouched until the user (or a preset) explicitly sets it.
             // Why successful: after one setter, only NAME (constructor) and the explicitly-set

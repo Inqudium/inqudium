@@ -20,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Wrapper compatibility across the bulkhead's lifecycle transitions
- * (audit finding 2.17.3 routed into REFACTORING.md sub-step 2.20).
+ * Wrapper compatibility across the bulkhead's lifecycle transitions (audit finding 2.17.3).
  *
  * <p>Three scenarios pin that a wrapper held over a real {@link InqBulkhead} stays semantically
  * correct as the underlying component moves through cold-to-hot, strategy hot-swap, and

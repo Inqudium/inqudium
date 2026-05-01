@@ -11,9 +11,9 @@ import java.util.ServiceLoader;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ServiceLoader-discovery pin for the framework's class-3 rules. Per ADR-027 / REFACTORING.md
- * 2.7 the framework no longer hardcodes the list of {@link ConsistencyRule}s in any source
- * file; rules are picked up exclusively through
+ * ServiceLoader-discovery pin for the framework's class-3 rules. Per ADR-027 the framework
+ * no longer hardcodes the list of {@link ConsistencyRule}s in any source file; rules are
+ * picked up exclusively through
  * {@code META-INF/services/eu.inqudium.config.validation.ConsistencyRule}. This test proves the
  * discovery mechanism works in isolation from the build pipeline — a regression that broke the
  * service file (deleted line, wrong fully-qualified name, missing META-INF directory) would

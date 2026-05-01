@@ -36,7 +36,7 @@ modules. It defines:
   `InqProxyFactory`, `SyncPipelineTerminal`, `ElementLayerProvider`. They
   consume `InqDecorator` (or `InqAsyncDecorator`) — never `InqBulkhead`.
 
-The audit in REFACTORING.md sub-step 2.17 surfaced the structural gap: **the new
+The bulkhead pipeline-integration audit surfaced the structural gap: **the new
 `InqBulkhead` does not implement any pipeline contract**. It has the right
 `execute(...)` signature structurally — inherited from
 `ImperativeLifecyclePhasedComponent` — but no interface declares it. As a
@@ -394,7 +394,7 @@ order of cost:
 
 - **The ordering between adopting Rule 3 (record-style rename) and the rest
   of this ADR.** They could be done in two sub-steps or one. The
-  implementation plan in REFACTORING.md decides the granularity.
+  implementation plan decides the granularity.
 
 ### Risk
 

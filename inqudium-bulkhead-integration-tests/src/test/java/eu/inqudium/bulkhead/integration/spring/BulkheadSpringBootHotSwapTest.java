@@ -102,10 +102,10 @@ class BulkheadSpringBootHotSwapTest {
         // After the swap, calls go through the new strategy without a bean refresh.
         // Why successful: snapshot.strategy() reflects the new type and post-swap calls still
         // return their results.
-        // Why important: this is the integration-level pin that REFACTORING.md describes as
-        // "Bulkhead-Strategy wird zur Laufzeit ausgetauscht … nachfolgender Aufruf reflektiert
-        // die neue Strategy". A regression in the registry → aspect → bulkhead handle chain
-        // would silently keep using the old strategy after a runtime patch.
+        // Why important: this is the integration-level pin for the runtime strategy hot-swap
+        // contract on the Spring AOP path: the bulkhead's strategy is replaced at runtime, and
+        // the next call reflects the new strategy. A regression in the registry → aspect →
+        // bulkhead handle chain would silently keep using the old strategy after a runtime patch.
 
         @SuppressWarnings("unchecked")
         eu.inqudium.imperative.bulkhead.InqBulkhead<Void, Object> bh =
