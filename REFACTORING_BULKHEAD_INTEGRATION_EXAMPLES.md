@@ -318,11 +318,15 @@ non-Boot setups.
 - The Spring Framework module is self-contained.
 - No Spring Boot dependencies in this module's POM.
 
-### 5.F: Spring Boot example module + Spring-Boot test migration
+### 5.F: Spring Boot example module
 
-The most familiar style for new Java applications today. Auto-config via
-`@SpringBootApplication`, beans via `@Bean`, and the bulkhead reachable
-through `@InqBulkhead` annotation on service methods.
+The most familiar style for new Java applications today. This module
+demonstrates the Spring Boot integration style for application
+developers — auto-config via `@SpringBootApplication`, beans via
+`@Bean`, the bulkhead reachable through `@InqBulkhead` annotations on
+service methods. Tests in this module test the *example application*
+(not the library), the way an application developer would test theirs.
+Parallel in shape and scope to 5.B, 5.C, 5.E.
 
 **Tasks:**
 
@@ -333,60 +337,58 @@ through `@InqBulkhead` annotation on service methods.
    `InqElement` beans and wires them to `@InqBulkhead`-annotated methods.
 3. `Main` is the standard `SpringApplication.run(Application.class,
    args)`.
-4. **Migrate from `inqudium-bulkhead-library-tests`:**
-   `BulkheadSpringBootIntegrationTest`,
-   `BulkheadSpringBootHotSwapTest`,
-   `BulkheadSpringBootShutdownTest`. Adapt each so it makes sense as part
-   of a Spring Boot example module's test suite — they may need
-   restructuring; the existing tests' inner `@SpringBootApplication` and
-   `@Bean` declarations might collapse into the module's own
-   `@SpringBootApplication`, removing per-test configuration boilerplate.
-   Pause and report if a test's pre-existing in-class configuration
-   doesn't merge cleanly.
-5. After migration, `inqudium-bulkhead-library-tests` no longer has
-   Spring-Boot-specific tests.
+4. Tests exercise the example application end-to-end through the Spring
+   Boot context — patterns a real application developer would write,
+   not library-level tests.
 
 **What 5.F does NOT do:**
 - Does NOT touch the auto-configuration code or `InqShieldAspect` itself.
   Those are library production code; this module exercises them.
+- Does NOT migrate any test from `inqudium-bulkhead-library-tests`. The
+  library-tests module's Spring-Boot tests serve a different purpose
+  (library safety net) and stay there. They are not application-level
+  test patterns.
 
 **Verification gates for 5.F:**
 - `mvn verify` reactor green.
 - The Spring Boot module is self-contained.
-- All three migrated tests pass in the new module.
-- `inqudium-bulkhead-library-tests` no longer has the three migrated
-  tests.
+- Module has its own example-application tests, structured like
+  `inqudium-bulkhead-integration-{function,proxy,aspectj,spring-framework}`'s.
 
 ### 5.G: Final cleanup of `inqudium-bulkhead-library-tests`
 
-After 5.A–5.F, `inqudium-bulkhead-library-tests` should hold exactly
-the tests that are genuinely library-end-to-end and have no
-integration-style-specific home. Confirm this state, audit residual
-contents, ensure the `package-info.java` from 5.B accurately describes
-the surviving content.
+After 5.A–5.F, the only test that actually migrated out of
+`inqudium-bulkhead-library-tests` is `BulkheadAspectLifecycleTest` (in
+sub-step 5.D, to the AspectJ example module). The other Spring-Boot
+and library-end-to-end tests remain in the library-tests module by
+design — they exercise library behaviour under realistic conditions
+and are not application-level patterns. 5.G's job is to confirm the
+surviving content is accurate and well-documented.
 
 **Tasks:**
 
-1. Audit `inqudium-bulkhead-library-tests`'s remaining tests. Each one
-   should genuinely test library behaviour, not be an
-   integration-specific test that should have moved.
-2. Update `package-info.java` (added in 5.B) so its description matches
-   what survives. If the surviving tests cover specific themes
-   (lifecycle, concurrency, wrapper-family), name those themes
-   explicitly.
-3. If any surviving test would be more at home in a specific example
-   module, pause and report — it might mean an earlier sub-step
-   under-migrated.
+1. Confirm `BulkheadAspectLifecycleTest` is no longer present in the
+   library-tests module (it migrated in 5.D).
+2. Audit the remaining tests in `inqudium-bulkhead-library-tests`.
+   Confirm each is library-level, not example-level. Pause and report
+   if any reads more like an application test that should be in an
+   example module.
+3. Update the `package-info.java` (added in 5.B) so its description
+   accurately reflects the surviving content. If the surviving tests
+   cluster around themes (lifecycle, concurrency, wrapper-family,
+   Spring-Boot-integration), name those themes in the doc.
 
 **What 5.G does NOT do:**
-- Does NOT move new tests into the library-tests module. Its scope is
-  fixed.
+- Does NOT migrate any further tests. The scope of test migrations was
+  settled by 5.A–5.F.
 - Does NOT modify production code.
 
 **Verification gates for 5.G:**
 - `mvn verify` reactor green.
-- `inqudium-bulkhead-library-tests`'s test contents are documented in
-  `package-info.java` and match what's in `src/test/java`.
+- `BulkheadAspectLifecycleTest` is absent from
+  `inqudium-bulkhead-library-tests`.
+- `inqudium-bulkhead-library-tests`'s `package-info.java` accurately
+  describes the surviving content.
 - Any concerns about test placement are reported, not fixed silently.
 
 ### 5.H: TODO / doc closure
@@ -427,9 +429,12 @@ subsequent work has a stable home. Function-based first because it is
 the simplest example and establishes the pattern. Each example module
 adds one layer of integration complexity on top of the previous one.
 Spring Boot last because it is the most layered (DI + auto-config +
-annotation processing). Library-tests cleanup after all migrations are
-complete. Doc closure last because it depends on the final shape being
-known.
+annotation processing). Each example module gets its own
+example-application tests, written from scratch in that module; the
+library-tests module retains the library-level tests. Only the AspectJ
+migration in 5.D actually moves a test between modules
+(`BulkheadAspectLifecycleTest`). 5.G then confirms the residual shape;
+doc closure last because it depends on the final shape being known.
 
 ## Risk register
 
@@ -441,13 +446,6 @@ some integration style this proves to require infrastructure that's
 genuinely shared (e.g. a fixture for hooking the runtime into the
 service), pause and report; we may need to revise decision 3 mid-flight
 or accept a small `inqudium-bulkhead-integration-common` exception.
-
-The Spring-Boot-test migration in 5.F may surface that the existing
-tests' in-class `@SpringBootApplication` and `@Bean` declarations don't
-cleanly merge into the new module's own `@SpringBootApplication`. The
-plan asks to pause and report — the alternative is keeping per-test
-configuration as-is, which loses some of the benefit of having a real
-example module.
 
 The AspectJ weaving choice (compile-time vs. load-time) in 5.D may
 require build-configuration work that's heavy for a small example
@@ -461,7 +459,7 @@ self-contained example.
 - [ ] 5.C — Proxy example
 - [ ] 5.D — AspectJ example + AspectJ test migration
 - [ ] 5.E — Spring Framework example
-- [ ] 5.F — Spring Boot example + Spring Boot test migration
+- [ ] 5.F — Spring Boot example
 - [ ] 5.G — Library-tests cleanup
 - [ ] 5.H — Doc closure
 
