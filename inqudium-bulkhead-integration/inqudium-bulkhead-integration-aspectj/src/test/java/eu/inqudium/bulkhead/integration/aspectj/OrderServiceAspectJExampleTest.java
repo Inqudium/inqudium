@@ -15,6 +15,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -422,6 +423,223 @@ class OrderServiceAspectJExampleTest {
             // so the lifecycle group is documented in the test report instead of silently
             // missing; a reader scanning the suite sees the explicit decision rather than a
             // gap.
+        }
+    }
+
+    @Nested
+    @DisplayName("RuntimeConfigChange")
+    class RuntimeConfigChange {
+
+        /**
+         * Drive the AdminService's promotion cycle through the singleton runtime and ensure
+         * the runtime is restored to its baseline (balanced/2) on every exit path. The
+         * AspectJ aspect is a JVM-singleton: the runtime survives across every test method
+         * in this class, so a runtime-config-change test that left the bulkhead patched at
+         * permissive/50 would break every subsequent test that assumes the configured limit
+         * is two. The {@code finally} guard is therefore not optional — it is what reconciles
+         * the per-test promotion cycle with the singleton-runtime invariant the rest of this
+         * suite depends on.
+         *
+         * <p>This is the structural deviation from the function-based and proxy-based
+         * RuntimeConfigChange tests: those modules build a fresh runtime in {@code @BeforeEach}
+         * (function) or open a {@code try-with-resources} runtime inside the test body
+         * (proxy), so a leak there only affects the failing test. Here a leak would
+         * cascade — hence the explicit restore.
+         */
+        @Test
+        void a_full_promotion_cycle_changes_saturation_behavior_live() throws InterruptedException {
+            // What is to be tested: the AdminService's promotion cycle observably changes the
+            // bulkhead's saturation behaviour live, without rebuilding the aspect, the
+            // pipeline, or the terminal. Three sequential phases through the singleton aspect:
+            //   1. balanced/2 — two holders saturate, third woven call rejected.
+            //   2. permissive/50 (after startSellPromotion) — five concurrent async holders
+            //      all succeed without rejection.
+            //   3. balanced/2 (after endSellPromotion) — saturation restored, third woven
+            //      call rejected again.
+            // How will the test be deemed successful and why: the third call in phase 1 and
+            // phase 3 throws InqBulkheadFullException; the five holders in phase 2 all
+            // produce their result without any exception. The same OrderService instance —
+            // and therefore the same woven dispatch path — is used across all three phases,
+            // proving the patch works through the aspect, not around it.
+            // Why is it important: this is the operational headline of sub-step 6.E — that a
+            // runtime patch flows through to the bulkhead's live behaviour without the aspect
+            // needing to be rebuilt. A regression here would mean operators who patch a
+            // bulkhead through runtime.update(...) silently get no effect at the woven
+            // dispatch path. The aspect singleton makes this property load-bearing for every
+            // call site in a JVM-wide CTW deployment.
+            OrderService service = new OrderService();
+            OrderBulkheadAspect aspect = Aspects.aspectOf(OrderBulkheadAspect.class);
+            InqBulkhead<Object, Object> bh = aspect.bulkhead();
+            AdminService admin = new AdminService(aspect.runtime());
+
+            // Sanity: the singleton runtime starts at balanced/2 (the configured baseline).
+            forceHotPhase(service);
+            assertThat(bh.availablePermits())
+                    .as("singleton baseline before the promotion cycle")
+                    .isEqualTo(2);
+
+            try {
+                // === Phase 1: balanced/2 — third call rejected ===
+                runSaturationCycle(service, bh, 2, /*expectRejection*/ true);
+
+                // === Phase 2: permissive/50 — five holders all succeed ===
+                admin.startSellPromotion();
+                runFiveAsyncHoldersSuccessfully(service, bh);
+
+                // === Phase 3: balanced/2 again — third call rejected again ===
+                admin.endSellPromotion();
+                runSaturationCycle(service, bh, 2, /*expectRejection*/ true);
+            } finally {
+                // Restore the singleton runtime to its baseline so subsequent tests in this
+                // class observe balanced/2 even if any assertion above failed mid-flight.
+                // Re-issuing balanced/2 from balanced/2 is a no-op patch.
+                admin.endSellPromotion();
+            }
+        }
+
+        @Test
+        void available_permits_jump_immediately_when_promotion_starts_and_ends() {
+            // What is to be tested: availablePermits() on the bulkhead handle reflects a
+            // runtime patch synchronously and without lag, even when the bulkhead sits behind
+            // the woven aspect. The three reads (initial, after start, after end) capture the
+            // bulkhead's permit ceiling at each phase.
+            // How will the test be deemed successful and why: the read at the singleton
+            // baseline returns 2 (balanced default); the read after startSellPromotion returns
+            // 50 (the permissive patch); the read after endSellPromotion returns 2 again.
+            // Why is it important: an operator's observability contract for a runtime patch
+            // is "what I see right after the patch is what's true now". If the aspect's
+            // pipeline ever held a stale snapshot of the bulkhead's strategy — for example,
+            // by caching the live tuner across patches — the permits read would lag the
+            // patch and operators would not be able to confirm a successful change from a
+            // dashboard or admin endpoint. The aspect adds a layer of cached terminals on
+            // top of the bulkhead; this test pins that the cache does not interpose stale
+            // strategy state.
+            OrderService service = new OrderService();
+            OrderBulkheadAspect aspect = Aspects.aspectOf(OrderBulkheadAspect.class);
+            InqBulkhead<Object, Object> bh = aspect.bulkhead();
+            AdminService admin = new AdminService(aspect.runtime());
+            forceHotPhase(service);
+
+            try {
+                // Given: the singleton runtime under the balanced/2 default
+                assertThat(bh.availablePermits())
+                        .as("singleton baseline before the patch")
+                        .isEqualTo(2);
+
+                // When: the promotion patch is applied
+                admin.startSellPromotion();
+
+                // Then: the new permit ceiling is observable immediately
+                assertThat(bh.availablePermits())
+                        .as("permit ceiling after startSellPromotion (permissive/50)")
+                        .isEqualTo(50);
+
+                // When: the promotion patch is reversed
+                admin.endSellPromotion();
+
+                // Then: the original permit ceiling is restored immediately
+                assertThat(bh.availablePermits())
+                        .as("permit ceiling after endSellPromotion (balanced/2)")
+                        .isEqualTo(2);
+            } finally {
+                // Restore the singleton runtime to its baseline so subsequent tests in this
+                // class observe balanced/2 even if the third assertion failed mid-flight.
+                admin.endSellPromotion();
+            }
+        }
+
+        /**
+         * Drive {@code holderCount} virtual-thread holders into the bulkhead through the
+         * woven service, attempt one extra synchronous woven call, and assert the rejection
+         * (or success) of that extra call.
+         */
+        private void runSaturationCycle(OrderService service, InqBulkhead<?, ?> bh,
+                                        int holderCount, boolean expectRejection)
+                throws InterruptedException {
+            CountDownLatch[] acquired = new CountDownLatch[holderCount];
+            CountDownLatch release = new CountDownLatch(1);
+            Thread[] holders = new Thread[holderCount];
+            List<Throwable> holderErrors = new ArrayList<>();
+            for (int i = 0; i < holderCount; i++) {
+                acquired[i] = new CountDownLatch(1);
+                CountDownLatch acq = acquired[i];
+                holders[i] = Thread.startVirtualThread(() -> {
+                    try {
+                        service.placeOrderHolding(acq, release);
+                    } catch (Throwable t) {
+                        holderErrors.add(t);
+                    }
+                });
+            }
+
+            try {
+                for (CountDownLatch a : acquired) {
+                    assertThat(a.await(5, TimeUnit.SECONDS))
+                            .as("each holder must enter the body").isTrue();
+                }
+
+                if (expectRejection) {
+                    assertThatThrownBy(() -> service.placeOrder("Saturated"))
+                            .isInstanceOf(InqBulkheadFullException.class);
+                } else {
+                    assertThat(service.placeOrder("Saturated")).isEqualTo("ordered:Saturated");
+                }
+            } finally {
+                release.countDown();
+                for (Thread t : holders) {
+                    t.join();
+                }
+            }
+
+            assertThat(holderErrors).as("holders must release without errors").isEmpty();
+            assertThat(bh.availablePermits())
+                    .as("permits return to the configured limit after holders release")
+                    .isEqualTo(holderCount);
+        }
+
+        /**
+         * Run five concurrent async holders against the bulkhead through the woven service
+         * and confirm none is rejected. Five is well below permissive/50, so the success is
+         * structural — none of the calls runs out of permits.
+         */
+        private void runFiveAsyncHoldersSuccessfully(OrderService service,
+                                                     InqBulkhead<Object, Object> bh) {
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            List<CompletionStage<String>> holders = new ArrayList<>();
+            AtomicReference<Throwable> firstError = new AtomicReference<>();
+            for (int i = 0; i < 5; i++) {
+                try {
+                    holders.add(service.placeOrderHoldingAsync(release));
+                } catch (Throwable t) {
+                    firstError.compareAndSet(null, t);
+                }
+            }
+
+            assertThat(firstError.get())
+                    .as("no holder should be rejected under permissive/50")
+                    .isNull();
+            assertThat(holders).hasSize(5);
+            assertThat(bh.concurrentCalls())
+                    .as("five async holders all hold permits at once")
+                    .isEqualTo(5);
+
+            release.complete(null);
+            for (CompletionStage<String> h : holders) {
+                assertThat(h.toCompletableFuture().join()).isEqualTo("async-released");
+            }
+            assertThat(bh.concurrentCalls()).isZero();
+        }
+
+        /**
+         * Force the bulkhead into its hot phase by issuing one no-op woven order. The
+         * handle's {@code availablePermits()} returns the live strategy's value once hot;
+         * before that it returns the cold-state limit from the snapshot. The aspect's
+         * singleton runtime may already be hot if a prior test in this class has run, but
+         * driving one no-op woven call here removes any cold/hot ambiguity from the
+         * subsequent assertions regardless of test ordering.
+         */
+        private void forceHotPhase(OrderService service) {
+            service.placeOrder("warm-up");
         }
     }
 }
