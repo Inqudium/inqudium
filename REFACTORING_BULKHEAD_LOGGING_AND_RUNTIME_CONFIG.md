@@ -258,7 +258,7 @@ order and see the same complexity progression in two refactor cycles.
 - [x] 6.B — InqShieldAspect introspection API (Library) (2026-05-02, PR #39)
 - [x] 6.C — Function-based example (2026-05-02, PR #40)
 - [x] 6.D — Proxy-based example (2026-05-04, PR #50)
-- [ ] 6.E — AspectJ example
+- [x] 6.E — AspectJ example (2026-05-04, PR #51)
 - [ ] 6.F — Spring-Framework example
 - [ ] 6.G — Spring-Boot example
 - [ ] 6.H — Documentation closure
