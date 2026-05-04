@@ -8,6 +8,7 @@ import eu.inqudium.core.pipeline.proxy.MethodHandleCache;
 import eu.inqudium.core.pipeline.proxy.MethodInvoker;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -176,9 +177,6 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
     /**
      * Casts an {@link InqElement} to {@link InqAsyncDecorator}, providing a
      * descriptive error if the element does not implement the async decorator.
-     *
-     * <p>Mirrors the message form used by {@code HybridProxyPipelineTerminal}
-     * so that diagnostics remain consistent across the proxy stack.</p>
      */
     private static InqAsyncDecorator<?, ?> asAsyncDecorator(InqElement element) {
         if (element instanceof InqAsyncDecorator<?, ?> decorator) {
@@ -287,6 +285,39 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
                 throw handleException(method, e);
             }
         };
+    }
+
+    // ======================== Diagnostics ========================
+
+    /**
+     * Returns the descriptions of the pipeline elements in outermost-first
+     * order, formatted as {@code ELEMENT_TYPE(name)}.
+     *
+     * <p>For a pipeline built as
+     * {@code builder.shield(bulkhead).shield(circuitBreaker).build()} where
+     * the bulkhead is named {@code "orderBh"} and the circuit breaker named
+     * {@code "orderCb"}, this method returns
+     * {@code [BULKHEAD(orderBh), CIRCUIT_BREAKER(orderCb)]} (with the standard
+     * pipeline ordering, BH at order 400 sits outside CB at order 500).</p>
+     *
+     * <p>The returned list is unmodifiable and uses the element ordering
+     * already produced by {@link InqPipeline#elements()} — outermost first
+     * (lowest {@code orderFor} value). The first entry is the layer a call
+     * enters first; the last entry is the layer immediately above the
+     * service-method invocation.</p>
+     *
+     * <p>Cold-path diagnostic only — intended for startup logging, topology
+     * inspection, and tests. The list is rebuilt on every call (the pipeline
+     * is immutable, so the result is stable, but this method should not be
+     * called on the dispatch hot path).</p>
+     *
+     * @return the layer descriptions in outermost-first order; never
+     * {@code null}, possibly empty for a no-element pipeline
+     */
+    public List<String> layerDescriptions() {
+        return pipeline.elements().stream()
+                .map(element -> element.elementType() + "(" + element.name() + ")")
+                .toList();
     }
 
     // ======================== DispatchExtension SPI ========================
@@ -417,10 +448,9 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
      * <p>Synchronous failures during chain composition or terminal invocation
      * are lifted into a failed {@link CompletionStage} via
      * {@link CompletableFuture#failedFuture(Throwable)}. This preserves the
-     * uniform-error-channel semantics that
-     * {@code HybridProxyPipelineTerminal}'s async dispatch path provides
-     * today: the caller always observes failures via the returned stage,
-     * never as a synchronous throw.</p>
+     * uniform-error-channel semantics for the async dispatch path: the caller
+     * always observes failures via the returned stage, never as a synchronous
+     * throw.</p>
      *
      * @param chainId  the chain identifier
      * @param callId   the call identifier
@@ -444,8 +474,8 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
             return chainFactory.apply(joinPoint).proceed();
         } catch (Throwable t) {
             // Uniform error channel: lift synchronous failures into a failed
-            // stage. Mirrors HybridProxyPipelineTerminal's async dispatch
-            // path so the observable contract stays unchanged.
+            // stage so callers always observe failures via the returned stage,
+            // never as a synchronous throw.
             return CompletableFuture.failedFuture(t);
         }
     }
