@@ -20,6 +20,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,7 +61,7 @@ class OrderServiceProxyExampleTest {
         bulkhead = orderBulkhead(runtime);
         InqPipeline pipeline = InqPipeline.builder().shield(bulkhead).build();
         service = InqAsyncProxyFactory.of(pipeline)
-                .protect(OrderService.class, new DefaultOrderService());
+                .protect(OrderService.class, new DefaultOrderService(runtime));
     }
 
     @AfterEach
@@ -331,7 +332,7 @@ class OrderServiceProxyExampleTest {
                 InqBulkhead<Object, Object> bh = orderBulkhead(first);
                 OrderService firstProxy = InqAsyncProxyFactory
                         .of(InqPipeline.builder().shield(bh).build())
-                        .protect(OrderService.class, new DefaultOrderService());
+                        .protect(OrderService.class, new DefaultOrderService(first));
 
                 String firstResult = firstProxy.placeOrderAsync("First")
                         .toCompletableFuture().join();
@@ -343,7 +344,7 @@ class OrderServiceProxyExampleTest {
                 InqBulkhead<Object, Object> bh = orderBulkhead(second);
                 OrderService secondProxy = InqAsyncProxyFactory
                         .of(InqPipeline.builder().shield(bh).build())
-                        .protect(OrderService.class, new DefaultOrderService());
+                        .protect(OrderService.class, new DefaultOrderService(second));
 
                 String secondResult = secondProxy.placeOrderAsync("Second")
                         .toCompletableFuture().join();
@@ -431,6 +432,203 @@ class OrderServiceProxyExampleTest {
             } finally {
                 syncRelease.countDown();
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("RuntimeConfigChange")
+    class RuntimeConfigChange {
+
+        @Test
+        void a_full_promotion_cycle_changes_saturation_behavior_live() throws InterruptedException {
+            // What is to be tested: the AdminService's promotion cycle observably changes the
+            // bulkhead's saturation behaviour live, without rebuilding the runtime, the
+            // proxy, or the pipeline. Three sequential phases:
+            //   1. balanced/2 — two holders saturate, third proxied call rejected.
+            //   2. permissive/50 (after startSellPromotion) — five concurrent async holders
+            //      all succeed without rejection.
+            //   3. balanced/2 (after endSellPromotion) — saturation restored, third proxied
+            //      call rejected again.
+            // How will the test be deemed successful and why: the third call in phase 1 and
+            // phase 3 throws InqBulkheadFullException; the five holders in phase 2 all
+            // produce their result without any exception. Each phase uses the same proxy
+            // instance — a single dispatch chain — to prove the patch works through it, not
+            // around it.
+            // Why is it important: this is the operational headline of sub-step 6.D — that a
+            // runtime patch flows through to the bulkhead's live behaviour without the proxy
+            // needing to be rebuilt. A regression here would mean operators who patch a
+            // bulkhead through runtime.update(...) silently get no effect at the proxy's
+            // dispatch path.
+
+            // Reset the per-test fixture's runtime: this test owns its own runtime so the
+            // Admin/proxy wiring is contained inside this method.
+            runtime.close();
+            runtime = null;
+
+            try (InqRuntime localRuntime = BulkheadConfig.newRuntime()) {
+                InqBulkhead<Object, Object> localBulkhead = orderBulkhead(localRuntime);
+                InqPipeline pipeline = InqPipeline.builder().shield(localBulkhead).build();
+                OrderService localService = InqAsyncProxyFactory.of(pipeline)
+                        .protect(OrderService.class, new DefaultOrderService(localRuntime));
+                AdminService admin = new AdminService(localRuntime);
+
+                // === Phase 1: balanced/2 — third call rejected ===
+                runSaturationCycle(localService, localBulkhead, 2, /*expectRejection*/ true);
+
+                // === Phase 2: permissive/50 — five holders all succeed ===
+                admin.startSellPromotion();
+                runFiveAsyncHoldersSuccessfully(localService, localBulkhead);
+
+                // === Phase 3: balanced/2 again — third call rejected again ===
+                admin.endSellPromotion();
+                runSaturationCycle(localService, localBulkhead, 2, /*expectRejection*/ true);
+            }
+        }
+
+        @Test
+        void available_permits_jump_immediately_when_promotion_starts_and_ends() {
+            // What is to be tested: availablePermits() on the bulkhead handle reflects a
+            // runtime patch synchronously and without lag, even when the bulkhead sits behind
+            // a proxy. The three reads (initial, after start, after end) capture the
+            // bulkhead's permit ceiling at each phase.
+            // How will the test be deemed successful and why: the read after construction
+            // returns 2 (the balanced default); the read after startSellPromotion returns
+            // 50 (the permissive patch); the read after endSellPromotion returns 2 again.
+            // Why is it important: an operator's observability contract for a runtime patch
+            // is "what I see right after the patch is what's true now". If the proxy's
+            // pipeline ever held a stale snapshot of the bulkhead's strategy — for example,
+            // by caching the live tuner across patches — the permits read would lag the
+            // patch and operators would not be able to confirm a successful change from a
+            // dashboard or admin endpoint.
+
+            // Reset the per-test fixture's runtime: this test owns its own runtime so the
+            // permit-ceiling reads are unambiguous.
+            runtime.close();
+            runtime = null;
+
+            try (InqRuntime localRuntime = BulkheadConfig.newRuntime()) {
+                InqBulkhead<Object, Object> localBulkhead = orderBulkhead(localRuntime);
+                InqPipeline pipeline = InqPipeline.builder().shield(localBulkhead).build();
+                OrderService localService = InqAsyncProxyFactory.of(pipeline)
+                        .protect(OrderService.class, new DefaultOrderService(localRuntime));
+                AdminService admin = new AdminService(localRuntime);
+                forceHotPhase(localService);
+
+                // Given: a freshly built runtime under the balanced/2 default
+                assertThat(localBulkhead.availablePermits())
+                        .as("initial permit ceiling under balanced/2")
+                        .isEqualTo(2);
+
+                // When: the promotion patch is applied
+                admin.startSellPromotion();
+
+                // Then: the new permit ceiling is observable immediately
+                assertThat(localBulkhead.availablePermits())
+                        .as("permit ceiling after startSellPromotion (permissive/50)")
+                        .isEqualTo(50);
+
+                // When: the promotion patch is reversed
+                admin.endSellPromotion();
+
+                // Then: the original permit ceiling is restored immediately
+                assertThat(localBulkhead.availablePermits())
+                        .as("permit ceiling after endSellPromotion (balanced/2)")
+                        .isEqualTo(2);
+            }
+        }
+
+        /**
+         * Drive {@code holderCount} virtual-thread holders into the bulkhead through the
+         * proxy, attempt one extra synchronous proxied call, and assert the rejection (or
+         * success) of that extra call.
+         */
+        private void runSaturationCycle(OrderService service, InqBulkhead<?, ?> bulkhead,
+                                        int holderCount, boolean expectRejection)
+                throws InterruptedException {
+            CountDownLatch[] acquired = new CountDownLatch[holderCount];
+            CountDownLatch release = new CountDownLatch(1);
+            Thread[] holders = new Thread[holderCount];
+            List<Throwable> holderErrors = new ArrayList<>();
+            for (int i = 0; i < holderCount; i++) {
+                acquired[i] = new CountDownLatch(1);
+                CountDownLatch acq = acquired[i];
+                holders[i] = Thread.startVirtualThread(() -> {
+                    try {
+                        service.placeOrderHolding(acq, release);
+                    } catch (Throwable t) {
+                        holderErrors.add(t);
+                    }
+                });
+            }
+
+            try {
+                for (CountDownLatch a : acquired) {
+                    assertThat(a.await(5, TimeUnit.SECONDS))
+                            .as("each holder must enter the body").isTrue();
+                }
+
+                if (expectRejection) {
+                    assertThatThrownBy(() -> service.placeOrder("Saturated"))
+                            .isInstanceOf(InqBulkheadFullException.class);
+                } else {
+                    assertThat(service.placeOrder("Saturated")).isEqualTo("ordered:Saturated");
+                }
+            } finally {
+                release.countDown();
+                for (Thread t : holders) {
+                    t.join();
+                }
+            }
+
+            assertThat(holderErrors).as("holders must release without errors").isEmpty();
+            assertThat(bulkhead.availablePermits())
+                    .as("permits return to the configured limit after holders release")
+                    .isEqualTo(holderCount);
+        }
+
+        /**
+         * Run five concurrent async holders against the bulkhead through the proxy and
+         * confirm none is rejected. Five is well below permissive/50, so the success is
+         * structural — none of the calls runs out of permits.
+         */
+        private void runFiveAsyncHoldersSuccessfully(OrderService service,
+                                                     InqBulkhead<Object, Object> bulkhead) {
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            List<CompletionStage<String>> holders = new ArrayList<>();
+            AtomicReference<Throwable> firstError = new AtomicReference<>();
+            for (int i = 0; i < 5; i++) {
+                try {
+                    holders.add(service.placeOrderHoldingAsync(release));
+                } catch (Throwable t) {
+                    firstError.compareAndSet(null, t);
+                }
+            }
+
+            assertThat(firstError.get())
+                    .as("no holder should be rejected under permissive/50")
+                    .isNull();
+            assertThat(holders).hasSize(5);
+            assertThat(bulkhead.concurrentCalls())
+                    .as("five async holders all hold permits at once")
+                    .isEqualTo(5);
+
+            release.complete(null);
+            for (CompletionStage<String> h : holders) {
+                assertThat(h.toCompletableFuture().join()).isEqualTo("async-released");
+            }
+            assertThat(bulkhead.concurrentCalls()).isZero();
+        }
+
+        /**
+         * Force the bulkhead into its hot phase by issuing one no-op proxied order. The
+         * handle's {@code availablePermits()} returns the live strategy's value once hot;
+         * before that it returns the cold-state limit from the snapshot. Either reading
+         * would suffice for the assertions in this test, but driving through the proxy
+         * makes the path the same as production traffic and removes any cold/hot ambiguity
+         * from the assertions.
+         */
+        private void forceHotPhase(OrderService service) {
+            service.placeOrder("warm-up");
         }
     }
 }
