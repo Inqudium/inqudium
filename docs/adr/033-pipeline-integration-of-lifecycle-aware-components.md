@@ -4,6 +4,25 @@
 
 Proposed.
 
+> **Update — InqExecutor / InqAsyncExecutor removal.** A follow-up refactor
+> reversed the parts of Rule 2 / Rule 6 / Rule 7 that retained an
+> `InqExecutor` (and `InqAsyncExecutor`) one-shot surface alongside the
+> decorator surface. Those interfaces, their `executeRunnable` /
+> `executeSupplier` / `executeCallable` / `executeFunction` /
+> `executeJoinPoint` default methods, and the `PipelineIds.nextStandaloneCallId()`
+> JVM-global counter that fed them have all been deleted.
+>
+> Reason: the executor surface duplicated the decorator surface
+> (`bulkhead.executeSupplier(s)` was equivalent to
+> `bulkhead.decorateSupplier(s).get()`) and was the sole consumer of a
+> third call-id allocation path identified in `docs/audit/chain-id-allocation.md`.
+> No production caller used it.
+>
+> The historical text below describing the executor / decorator pairing
+> is preserved as the record of the original decision, but the current
+> code carries only `InqDecorator` and `InqAsyncDecorator` on
+> `InqBulkhead`.
+
 ## Context
 
 The configuration refactor (ADR-025 through ADR-032) introduced a new architecture
@@ -221,23 +240,20 @@ The pipeline contracts — `InqElement`, `InqExecutor`, `InqDecorator`, plus
 async counterparts — are *user-facing API*. They go on the **concrete
 component class**, not on the abstract lifecycle base.
 
-For `InqBulkhead`:
+For `InqBulkhead` (post InqExecutor removal):
 
 ```java
 public final class InqBulkhead<A, R>
-        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot>
+        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot, A, R>
         implements BulkheadHandle<ImperativeTag>,
-                   InqExecutor<A, R>,
-                   InqDecorator<A, R> {
+                   InqDecorator<A, R>,
+                   InqAsyncDecorator<A, R> {
     // ...
 }
 ```
 
-The async counterparts (`InqAsyncExecutor`, `InqAsyncDecorator`) are explicitly
-**not** included. The asynchronous bulkhead variant is an open design question
-(see `TODO.md` — *"Asynchronous variant of InqBulkhead is not implemented"*)
-and warrants its own ADR. Until that design is settled, `InqBulkhead` is
-synchronous-only at the pipeline-contract level.
+`InqAsyncDecorator` was added once the imperative async path landed. The
+executor surface is gone for both sync and async paths.
 
 `BulkheadHotPhase<A, R>` — the cold/hot lifecycle's hot-state implementation —
 is parameterized in `<A, R>` to match `InqBulkhead<A, R>` and
@@ -273,15 +289,15 @@ pattern: each declares its supported pipeline contracts directly.
 
 `InqBulkhead<A, R>` is parameterized by the same `<A, R>` that the pipeline
 contracts it implements use. The generic parameters propagate from
-`LayerAction<A, R>` through `InqExecutor<A, R>` and `InqDecorator<A, R>`
+`LayerAction<A, R>` through `InqDecorator<A, R>` (and `InqAsyncDecorator<A, R>`)
 into `InqBulkhead<A, R>` without erasure:
 
 ```java
 public final class InqBulkhead<A, R>
-        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot>
+        extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot, A, R>
         implements BulkheadHandle<ImperativeTag>,
-                   InqExecutor<A, R>,
-                   InqDecorator<A, R> {
+                   InqDecorator<A, R>,
+                   InqAsyncDecorator<A, R> {
     // ...
 }
 ```

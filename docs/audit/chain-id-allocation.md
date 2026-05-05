@@ -1,5 +1,15 @@
 # Chain-id allocation across stack-construction mechanisms — analysis report
 
+> **Resolution note (post-audit).** Path (f) — the third chainId-allocation
+> surface fed by `PipelineIds.nextStandaloneCallId()` and consumed by
+> `InqExecutor.executeXxx` / `InqAsyncExecutor.executeXxx` — has been
+> removed. The `InqExecutor` and `InqAsyncExecutor` interfaces, all five
+> default methods on each, and the `STANDALONE_CALL_ID_COUNTER` field
+> behind `nextStandaloneCallId()` are deleted. The remaining chainId
+> allocation surfaces in this report — paths (a) through (e) — are
+> unchanged. The body below is preserved as the audit's original record;
+> file paths and line numbers in section (f) refer to deleted code.
+
 ## Question 1 — Other stack-construction mechanisms?
 
 **Answer: No additional mechanism that fits all three criteria (multi-element input, callable output, documented as a stack).** The library exposes exactly two:

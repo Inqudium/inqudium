@@ -24,9 +24,7 @@ import java.util.function.LongSupplier;
  * {@code SyncPipelineTerminal}, and {@code HybridAspectPipelineTerminal}.
  * Lazy wrapper chains ({@code AbstractBaseWrapper} and its subclasses) are
  * not in scope — they maintain their own {@code chainId}/{@code callId}
- * state through the wrapper hierarchy. Standalone executions
- * ({@code InqExecutor}, {@code InqAsyncExecutor}) are also out of scope —
- * they draw IDs directly from {@link PipelineIds}.</p>
+ * state through the wrapper hierarchy.</p>
  *
  * <h3>Call-ID source — instance-local</h3>
  * <p>Each resolved pipeline keeps its own {@link LongSupplier} obtained from

@@ -3,11 +3,9 @@ package eu.inqudium.imperative.bulkhead;
 import eu.inqudium.core.config.InqConfig;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InqExecutor;
 import eu.inqudium.imperative.bulkhead.config.InqImperativeBulkheadConfig;
 import eu.inqudium.imperative.bulkhead.strategy.SemaphoreBulkheadStrategy;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InqAsyncExecutor;
 
 /**
  * Imperative bulkhead — limits concurrent calls via pluggable strategies.
@@ -51,8 +49,6 @@ import eu.inqudium.imperative.core.pipeline.InqAsyncExecutor;
 @SuppressWarnings("deprecation")
 public interface Bulkhead<A, R>
         extends InqDecorator<A, R>,
-        InqExecutor<A, R>,
-        InqAsyncExecutor<A, R>,
         InqAsyncDecorator<A, R> {
 
     /**
