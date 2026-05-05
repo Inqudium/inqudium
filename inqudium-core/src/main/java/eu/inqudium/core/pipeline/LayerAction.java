@@ -36,9 +36,9 @@ enum PassThrough implements LayerAction<Object, Object> {
  * argument, and a reference to the {@code next} step in the chain. The action decides
  * <strong>when, whether, and how</strong> to invoke the next step.</p>
  *
- * <p>This is the most fundamental abstraction in the pipeline framework. Both
- * {@link InqDecorator} (deferred wrapping) and {@code InqExecutor} (immediate
- * execution) extend this interface, inheriting its around-advice contract.</p>
+ * <p>This is the most fundamental abstraction in the pipeline framework.
+ * {@link InqDecorator} (deferred wrapping) extends this interface, inheriting
+ * its around-advice contract.</p>
  *
  * <h3>Pre-processing only (fire-and-forget logging)</h3>
  * <pre>{@code
