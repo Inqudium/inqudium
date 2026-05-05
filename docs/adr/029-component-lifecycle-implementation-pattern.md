@@ -258,7 +258,6 @@ package eu.inqudium.imperative.bulkhead;
 public final class InqBulkhead<A, R>
         extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot, A, R>
         implements BulkheadHandle<ImperativeTag>,
-                   InqExecutor<A, R>,
                    InqDecorator<A, R>,
                    InqAsyncDecorator<A, R> {
 

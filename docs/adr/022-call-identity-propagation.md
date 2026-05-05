@@ -120,21 +120,17 @@ per layer — only two primitive parameters flowing down the stack.
 ### Where the IDs come from: `PipelineIds`
 
 All ID generation is centralised in `eu.inqudium.core.pipeline.PipelineIds`,
-which exposes three producers with deliberately different contention
+which exposes two producers with deliberately different contention
 profiles:
 
-| Method                             | Scope                  | Used by                                                                    |
-|------------------------------------|------------------------|----------------------------------------------------------------------------|
-| `nextChainId()`                    | JVM-global             | Every new wrapper chain, every new resolved pipeline, standalone executors |
-| `nextStandaloneCallId()`           | JVM-global             | One-shot executions via `InqExecutor` / `InqAsyncExecutor`                 |
-| `newInstanceCallIdSource()`        | instance-local factory | Every long-lived wrapper chain and every resolved pipeline                 |
+| Method                             | Scope                  | Used by                                                    |
+|------------------------------------|------------------------|------------------------------------------------------------|
+| `nextChainId()`                    | JVM-global             | Every new wrapper chain, every new resolved pipeline       |
+| `newInstanceCallIdSource()`        | instance-local factory | Every long-lived wrapper chain and every resolved pipeline |
 
-`nextChainId()` and `nextStandaloneCallId()` are both backed by a single
-shared `AtomicLong`. That is deliberate: chain IDs are drawn at most once
-per chain construction (cold path), and standalone call IDs only appear in
-one-shot executors that have no persistent state to attach a counter to —
-the aggregate contention across callers is acceptable in exchange for not
-having any per-caller state.
+`nextChainId()` is backed by a single shared `AtomicLong`. That is
+deliberate: chain IDs are drawn at most once per chain construction
+(cold path), so contention is a non-issue.
 
 `newInstanceCallIdSource()` is the hot-path producer. It returns a fresh
 `LongSupplier` backed by its own private `AtomicLong`. Long-lived chains
@@ -221,25 +217,6 @@ return current.execute(cid, callId, null);
 Empty pipelines use the shared `EMPTY` sentinel whose `nextCallId()` is
 hard-wired to zero, so empty pipelines across the JVM do not share or
 mutate a counter.
-
-### Standalone executors
-
-One-shot executors (`InqExecutor`, `InqAsyncExecutor`) have no pipeline or
-wrapper chain to attach state to. They draw both IDs directly from the
-JVM-global counters at the point of execution:
-
-```java
-((LayerAction<Void, T>) this).execute(
-        PipelineIds.nextChainId(),
-        PipelineIds.nextStandaloneCallId(),
-        null,
-        (chainId, callId, arg) -> supplier.get());
-```
-
-This intentionally uses a separate counter from the per-pipeline suppliers.
-The cost is a single shared `AtomicLong` for standalone call IDs; the
-benefit is that one-shot callers do not need to construct, retain, or
-dispose of any per-caller state.
 
 ### How `InqEvent` and `InqException` consume the identity
 
