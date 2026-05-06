@@ -2,7 +2,7 @@ package eu.inqudium.imperative.core.pipeline;
 
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;

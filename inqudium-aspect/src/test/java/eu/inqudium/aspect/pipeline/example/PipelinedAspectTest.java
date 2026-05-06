@@ -1,7 +1,7 @@
 package eu.inqudium.aspect.pipeline.example;
 
 import eu.inqudium.aspect.pipeline.AspectLayerProvider;
-import eu.inqudium.core.pipeline.JoinPointWrapper;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 import eu.inqudium.core.pipeline.Wrapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

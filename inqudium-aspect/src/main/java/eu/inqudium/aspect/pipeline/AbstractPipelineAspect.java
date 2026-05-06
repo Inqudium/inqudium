@@ -1,7 +1,7 @@
 package eu.inqudium.aspect.pipeline;
 
-import eu.inqudium.core.pipeline.JoinPointExecutor;
-import eu.inqudium.core.pipeline.JoinPointWrapper;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 

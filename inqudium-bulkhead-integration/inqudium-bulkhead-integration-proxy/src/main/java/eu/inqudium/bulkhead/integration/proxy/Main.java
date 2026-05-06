@@ -11,7 +11,7 @@ import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqPipeline;
 import eu.inqudium.core.pipeline.Wrapper;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
-import eu.inqudium.imperative.core.pipeline.InqAsyncProxyFactory;
+import eu.inqudium.imperative.core.pipeline.proxy.InqAsyncProxyFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,6 +1,7 @@
 package eu.inqudium.aspect.pipeline;
 
 import eu.inqudium.core.pipeline.LayerAction;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 
 import java.lang.reflect.Method;
 
@@ -9,7 +10,7 @@ import java.lang.reflect.Method;
  * wrapper pipeline.
  *
  * <p>Implementations represent one concern (logging, timing, bulkhead, retry, etc.)
- * and are collected by the aspect infrastructure to build a {@link eu.inqudium.core.pipeline.JoinPointWrapper}
+ * and are collected by the aspect infrastructure to build a {@link JoinPointWrapper}
  * chain in priority order.</p>
  *
  * <h3>Ordering</h3>

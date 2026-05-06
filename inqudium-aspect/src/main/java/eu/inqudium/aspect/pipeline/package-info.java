@@ -2,7 +2,7 @@
  * AspectJ integration for the inqudium wrapper pipeline.
  *
  * <p>This module bridges AspectJ's {@code @Around} advice with the core
- * {@link eu.inqudium.core.pipeline.JoinPointWrapper} chain. It provides:</p>
+ * {@link eu.inqudium.core.pipeline.function.JoinPointWrapper} chain. It provides:</p>
  *
  * <ul>
  *   <li>{@link eu.inqudium.aspect.pipeline.AspectLayerProvider} — declarative

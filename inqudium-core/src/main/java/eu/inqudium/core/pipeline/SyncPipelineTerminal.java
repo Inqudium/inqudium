@@ -1,6 +1,8 @@
 package eu.inqudium.core.pipeline;
 
 import eu.inqudium.core.element.InqElement;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 
 import java.util.ArrayList;
 import java.util.Collections;

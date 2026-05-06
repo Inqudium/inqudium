@@ -1,10 +1,11 @@
 package eu.inqudium.aspect.pipeline;
 
 import eu.inqudium.core.pipeline.InternalExecutor;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
 import eu.inqudium.core.pipeline.Throws;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 
 import java.lang.reflect.Method;
 import java.util.Comparator;
@@ -18,7 +19,7 @@ import java.util.concurrent.CompletionException;
  *
  * <h3>Motivation</h3>
  * <p>The original {@link AspectPipelineBuilder} creates a full
- * {@link eu.inqudium.core.pipeline.JoinPointWrapper} chain on every
+ * {@link JoinPointWrapper} chain on every
  * invocation. This is wasteful: the layer structure (which providers, in
  * what order, with what actions) is <strong>deterministic per Method</strong>.
  * Only the terminal executor ({@code pjp::proceed}) changes between calls.</p>
@@ -188,7 +189,7 @@ public final class ResolvedPipeline {
      * <p>Checked exceptions from the delegate are transported via
      * {@link CompletionException} and unwrapped before re-throwing, preserving
      * the same contract as
-     * {@link eu.inqudium.core.pipeline.JoinPointWrapper#proceed()}.</p>
+     * {@link JoinPointWrapper#proceed()}.</p>
      *
      * @param coreExecutor the join point execution (typically {@code pjp::proceed})
      * @return the result of the pipeline execution

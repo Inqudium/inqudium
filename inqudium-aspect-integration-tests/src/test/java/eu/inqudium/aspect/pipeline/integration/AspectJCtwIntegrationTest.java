@@ -1,7 +1,7 @@
 package eu.inqudium.aspect.pipeline.integration;
 
 import eu.inqudium.aspect.pipeline.ResolvedPipeline;
-import eu.inqudium.core.pipeline.JoinPointWrapper;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 import eu.inqudium.core.pipeline.Wrapper;
 import org.aspectj.lang.Aspects;
 import org.junit.jupiter.api.BeforeEach;

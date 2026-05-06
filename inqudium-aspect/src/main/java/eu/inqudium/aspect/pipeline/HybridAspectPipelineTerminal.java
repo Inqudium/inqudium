@@ -4,7 +4,7 @@ import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
 import eu.inqudium.core.pipeline.InternalExecutor;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
 import eu.inqudium.core.pipeline.Throws;

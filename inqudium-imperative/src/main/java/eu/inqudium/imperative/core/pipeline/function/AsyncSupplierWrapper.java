@@ -1,6 +1,10 @@
-package eu.inqudium.imperative.core.pipeline;
+package eu.inqudium.imperative.core.pipeline.function;
 
-import eu.inqudium.core.pipeline.SupplierWrapper;
+import eu.inqudium.core.pipeline.function.SupplierWrapper;
+import eu.inqudium.imperative.core.pipeline.AsyncBaseWrapper;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
+import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
+import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
 
 import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;

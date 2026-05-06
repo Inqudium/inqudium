@@ -2,7 +2,8 @@ package eu.inqudium.spring;
 
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 
 import java.util.List;
 import java.util.concurrent.CompletionStage;
@@ -25,7 +26,7 @@ import java.util.function.Function;
  * that {@code ResolvedPipeline} carries. As a consequence:</p>
  * <ul>
  *   <li>This type does not expose a {@code chainId()}. The Spring aspect's
- *       hot path produces a fresh {@link eu.inqudium.core.pipeline.JoinPointWrapper}
+ *       hot path produces a fresh {@link JoinPointWrapper}
  *       chain per invocation (with its own chain identifier from
  *       {@link eu.inqudium.core.pipeline.PipelineIds}); there is no stable
  *       per-method chain identifier in the cache. Adding one purely for

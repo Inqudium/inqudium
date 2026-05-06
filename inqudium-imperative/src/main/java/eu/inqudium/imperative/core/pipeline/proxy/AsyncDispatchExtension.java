@@ -1,8 +1,10 @@
-package eu.inqudium.imperative.core.pipeline;
+package eu.inqudium.imperative.core.pipeline.proxy;
 
 import eu.inqudium.core.pipeline.proxy.DispatchExtension;
 import eu.inqudium.core.pipeline.proxy.MethodHandleCache;
 import eu.inqudium.core.pipeline.proxy.MethodInvoker;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
+import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletionStage;

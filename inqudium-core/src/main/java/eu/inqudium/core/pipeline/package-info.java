@@ -4,7 +4,7 @@
  * <p>This package provides a decorator-based pipeline that wraps standard Java functional
  * interfaces ({@link java.lang.Runnable}, {@link java.util.function.Supplier},
  * {@link java.util.concurrent.Callable}, {@link java.util.function.Function}) and
- * AOP proxy executions ({@link eu.inqudium.core.pipeline.JoinPointExecutor}) in a chain
+ * AOP proxy executions ({@link eu.inqudium.core.pipeline.function.JoinPointExecutor}) in a chain
  * of layers with <strong>around-semantics</strong>.</p>
  *
  * <h2>Architecture Overview</h2>
@@ -35,11 +35,11 @@
  *       structure: delegate, name, chain ID, and shared call-ID counter.</li>
  *   <li>{@link eu.inqudium.core.pipeline.BaseWrapper} — adds synchronous execution by
  *       wiring the next-step reference and the {@code LayerAction} at construction time.</li>
- *   <li>Concrete wrappers: {@link eu.inqudium.core.pipeline.RunnableWrapper},
- *       {@link eu.inqudium.core.pipeline.SupplierWrapper},
- *       {@link eu.inqudium.core.pipeline.CallableWrapper},
- *       {@link eu.inqudium.core.pipeline.FunctionWrapper},
- *       {@link eu.inqudium.core.pipeline.JoinPointWrapper} — each implements its
+ *   <li>Concrete wrappers: {@link eu.inqudium.core.pipeline.function.RunnableWrapper},
+ *       {@link eu.inqudium.core.pipeline.function.SupplierWrapper},
+ *       {@link eu.inqudium.core.pipeline.function.CallableWrapper},
+ *       {@link eu.inqudium.core.pipeline.function.FunctionWrapper},
+ *       {@link eu.inqudium.core.pipeline.function.JoinPointWrapper} — each implements its
  *       respective functional interface and is a drop-in replacement for the delegate.</li>
  * </ul>
  *

@@ -1,5 +1,8 @@
 package eu.inqudium.core.pipeline;
 
+import eu.inqudium.core.pipeline.function.RunnableWrapper;
+import eu.inqudium.core.pipeline.function.SupplierWrapper;
+
 /**
  * Abstract base class for all synchronous wrapper layers in the pipeline.
  *

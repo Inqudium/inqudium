@@ -6,7 +6,7 @@ import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.core.element.bulkhead.InqBulkheadFullException;
 import eu.inqudium.core.pipeline.InqPipeline;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
-import eu.inqudium.imperative.core.pipeline.InqAsyncProxyFactory;
+import eu.inqudium.imperative.core.pipeline.proxy.InqAsyncProxyFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

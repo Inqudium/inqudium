@@ -7,7 +7,7 @@ import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.SyncPipelineTerminal;
 import eu.inqudium.core.pipeline.proxy.InqProxyFactory;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
