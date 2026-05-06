@@ -46,22 +46,34 @@
             <artifactId>inqudium-annotation</artifactId>
             <scope>compile</scope>
         </dependency>
+        <!-- inqudium-spring-boot is not directly imported by this module's source. Its
+             auto-configuration is discovered via spring.factories at runtime. -->
         <dependency>
             <groupId>eu.inqudium</groupId>
             <artifactId>inqudium-spring-boot</artifactId>
-            <scope>compile</scope>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ========================= -->
         <!--  Spring Boot               -->
         <!-- ========================= -->
-        <!-- spring-boot-starter pulls the Boot core stack (autoconfigure, context, beans, …)
-             transitively. -->
+        <!-- Compile-scope: directly imported by OrderServiceApplication / BulkheadConfig. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
+            <artifactId>spring-boot</artifactId>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- spring-boot-starter-aspectj activates Spring AOP auto-configuration: Boot adds
              @EnableAspectJAutoProxy implicitly when this starter is on the classpath, so
              InqShieldAspect's @Around advice fires without any explicit opt-in on the
@@ -73,7 +85,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aspectj</artifactId>
-            <scope>compile</scope>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ========================= -->
@@ -81,8 +93,13 @@
         <!-- ========================= -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <artifactId>spring-boot-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-beans</artifactId>
+            <scope>compile</scope>
         </dependency>
 
     </dependencies>
