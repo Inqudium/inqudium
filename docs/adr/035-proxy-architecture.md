@@ -32,7 +32,7 @@ on each other.
 
 ### 1. Application model
 
-The library exposes a factory for proxy construction:
+The library exposes proxy construction as a method on `InqPipeline`:
 
 ```java
 InqPipeline pipeline = InqPipeline.builder()
@@ -40,17 +40,21 @@ InqPipeline pipeline = InqPipeline.builder()
         .shield(circuitBreaker)   // named "orderCb"
         .build();
 
-OrderService service = InqAsyncProxyFactory.of(pipeline)
-        .protect(OrderService.class, new DefaultOrderService(runtime));
+OrderService service = pipeline.protect(OrderService.class, new DefaultOrderService(runtime));
 ```
 
 The `protect` call returns a proxy that implements the `OrderService` interface. The proxy is the object the
 application uses; the original `DefaultOrderService` implementation is held internally as the *real target* and is
 invoked at the bottom of the resilience-stack for each protected call.
 
-The pipeline passed to the factory is the *available* set of resilience elements. Which elements actually wrap a
-specific method, and in what order, is determined by annotations on the implementation. The annotation evaluation
-follows ADR-036.
+The pipeline is the *available* set of resilience elements. Which elements actually wrap a specific method, and in
+what order, is determined by annotations on the implementation. The annotation evaluation follows ADR-036.
+
+There is no separate factory class in the user-facing API. The choice between synchronous, asynchronous, or hybrid
+dispatch is determined internally by the library based on the method signatures it encounters (per section 6) and
+on the paradigm modules present on the user's classpath (per ADR-037). Users who need only synchronous dispatch
+declare a dependency on `inqudium-pipeline`; users who need asynchronous dispatch additionally declare
+`inqudium-imperative`. The `pipeline.protect(...)` API is identical in both cases.
 
 ### 2. JDK Dynamic Proxy as the proxy mechanism
 
@@ -198,14 +202,21 @@ The dispatch mode for a method is determined at proxy-construction time (phase 2
 methods returning `CompletionStage` are async; all others are sync. Each cache entry records its dispatch mode,
 and phase-3 dispatch invokes the matching chain (`InternalExecutor` or `InternalAsyncExecutor`).
 
+The recognition of the dispatch mode and the routing to the corresponding dispatcher follow the rules of
+ADR-037. Recognition predicates live in `inqudium-pipeline` (the module that owns the pipeline and the proxy
+construction); paradigm-specific dispatchers live in their own modules (`inqudium-imperative` for async, future
+`inqudium-reactor` for reactive). The recognition uses class-literal references for JDK types
+(`CompletionStage`) and string-based hierarchy walks for external types (`Mono`); the dispatcher is selected
+through a hard-wired branch chain that prevents eager loading of unused paradigm classes.
+
 For the hybrid case to work, every resilience element annotated on an async method must implement
 `InqAsyncDecorator`. The library validates this at construction time: if a method's return type is `CompletionStage`
 and any of its referenced pipeline elements does not implement `InqAsyncDecorator`, proxy construction fails.
 
-The architecture is open to additional dispatch modes via additional return-type recognitions. A future Reactor-
-aware extension would recognise `Mono`/`Flux` return types in phase 1 and produce reactive cache entries in
-phase 2; phase 3 would dispatch through reactive subscription chains. The protocol for adding such an extension is
-treated separately and not specified in this ADR.
+The architecture is open to additional dispatch modes via additional return-type recognitions and
+correspondingly added paradigm modules (per ADR-037). A future Reactor-aware extension would recognise
+`Mono`/`Flux` return types and produce reactive cache entries; phase 3 would dispatch through reactive
+subscription chains. The protocol for adding such an extension is treated in ADR-037.
 
 #### `InvocationHandler` as carrier of `stackId` and `callId` source
 
@@ -418,3 +429,8 @@ The following capabilities are explicitly not supported:
 - The relationship to ADR-036 (annotation model) is foundational: the proxy is one of the integrations whose
   annotation evaluation ADR-036 specifies. Visibility and self-invocation considerations from ADR-036 section 8
   apply to the proxy as the canonical example.
+- The relationship to ADR-037 (module topology) is realisational: ADR-037 specifies how the proxy's dispatch
+  routing is laid out across modules and how optional dependencies for paradigm-specific dispatchers (async,
+  future Reactor) are handled. The user-facing API (`pipeline.protect(...)`) is identical across all paradigm
+  configurations; ADR-037 governs the module-level realisation that makes this single API work for varying
+  classpath shapes.
