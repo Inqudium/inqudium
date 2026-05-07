@@ -90,9 +90,13 @@ call is determined by the optional `@InqShield` annotation. The annotation has t
 - **`order`** — selects a named ordering strategy. Recognised values:
   - `"INQUDIUM"` (default) — composition follows the canonical order defined by the `InqElementType` enum. Each
     element type carries an ordering weight (e.g. `BULKHEAD = 400`); the evaluator sorts the annotations by their
-    element type's weight, ascending. The result is deterministic.
-  - `"RESILIENCE4J"` — composition follows the canonical order used by the Resilience4j library. This is offered
-    for users migrating from or interoperating with Resilience4j.
+    element type's weight, ascending. The current `InqElementType` enum defines the order
+    `TimeLimiter → TrafficShaper → RateLimiter → Bulkhead → CircuitBreaker → Retry`, outermost to innermost
+    (per ADR-017). Future element types are added to the enum with their ordering weight and are integrated
+    into the canonical sequence at their assigned position.
+  - `"RESILIENCE4J"` — composition follows the canonical order used by the Resilience4j library:
+    `Retry → CircuitBreaker → TrafficShaper → RateLimiter → TimeLimiter → Bulkhead`, outermost to innermost.
+    This is offered for users migrating from or interoperating with Resilience4j.
 - **`customOrder`** — an explicit ordering specified as an array of `InqElementType` values:
 
   ```java
@@ -308,6 +312,13 @@ The following capabilities are explicitly not supported by this evaluator:
   intentionally absent to keep the evaluator simple.
 - **Annotation inheritance from interface methods.** Resilience annotations on interface methods are not
   consulted, by design (see section 2).
+- **The `fallbackMethod` attribute.** The element annotations (`@InqBulkhead`, `@InqCircuitBreaker`, etc.)
+  declare a `fallbackMethod` attribute that names a method to invoke when the protected method fails or is
+  rejected by the resilience element. This attribute is not interpreted by the evaluator. It is reserved for
+  a future extension whose design — invocation semantics, signature requirements, behaviour on async
+  dispatch, interaction with the resilience-stack — is not yet finalised. Authors may declare the attribute
+  on their annotations; the evaluator silently ignores its value. A separate ADR will specify the fallback
+  semantics when the design is settled.
 
 ## Consequences
 
