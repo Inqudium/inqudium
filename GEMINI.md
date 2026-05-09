@@ -1,6 +1,12 @@
 # GEMINI.md
 
-This file is read automatically by Claude Code when it starts in this repository. It captures project conventions, the module layout, and the current working context so Claude doesn't have to rediscover them on every session.
+This file is read automatically by Google Gemini when it starts in this repository. It captures project conventions, the module layout, and the current working context so Claude doesn't have to rediscover them on every session.
+
+## Project tooling and versions
+
+- java version 21
+- kotlin version 2.3.20
+- maven version 3.9.15
 
 ## Project overview
 
@@ -40,21 +46,6 @@ These hold regardless of which module is being touched:
 - **Injectable time.** Use `InqNanoTimeSource` for monotonic time (metrics, deadlines) and `InqClock` for wall-clock time (log timestamps, event metadata). Tests inject deterministic sources — never `Thread.sleep` or `System.nanoTime()` directly in tests.
 - **Functional decoration as the primary API.** Elements decorate `Supplier<T>`, `Runnable`, `Function<T,R>`, `CompletionStage<T>`. Annotation-based `@InqShield` is a convenience layer on top, not a separate execution path.
 - **First-registration-wins registries.** Registries never overwrite an existing instance; the provided config is ignored if the name is already present.
-
-## Code-first, ADR-second
-
-**The code is authoritative. ADRs must follow the code, not the other way around.**
-
-Several ADRs have drifted from the implementation over time. Before editing an ADR, always inspect the current code and let it dictate what the ADR should say. An active inconsistency catalog lives in `docs/adr/_refactor-notes.md` (or equivalent path — create one if it isn't there yet) and can be used as the work plan for ADR revisions.
-
-Known drift hotspots as of the last review:
-
-- **ADR-022** (`InqCall` / call identity) — describes a `String callId` / `InqCall<T>` record that doesn't match the `long chainId` + `long callId` + `InternalExecutor` model actually in the code.
-- **ADR-016** (sliding window) — the real interface is `FailureMetrics` with several strategy implementations, not a `SlidingWindow` with two implementations.
-- **ADR-017, ADR-021, ADR-024** — reference a `CACHE` element that doesn't exist in `InqElementType`; `TRAFFIC_SHAPER` exists but isn't documented as an element in any ADR.
-- **ADR-015** — the `InqRegistry` interface in code lacks the template methods (`addConfiguration`, `get(name, configName)`) and `remove`/`clear` that the ADR describes.
-- **ADR-010** — forbids synchronous Callable + `Thread.interrupt`, but the imperative Time Limiter does exactly that via a virtual thread and `cancelOnTimeout`.
-- **ADR-018** — the real `RetryConfig` and backoff strategies diverge significantly from the ADR; a second DSL `RetryConfig` record exists alongside the primary one.
 
 When in doubt about any ADR statement, verify against the code before trusting it.
 
