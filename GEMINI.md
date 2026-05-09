@@ -1,6 +1,6 @@
 # GEMINI.md
 
-This file is read automatically by Google Gemini when it starts in this repository. It captures project conventions, the module layout, and the current working context so Claude doesn't have to rediscover them on every session.
+This file is read automatically by Google Gemini when it starts in this repository. It captures project conventions, the module layout, and the current working context so Gemini doesn't have to rediscover them on every session.
 
 ## Project tooling and versions
 
