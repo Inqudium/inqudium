@@ -46,6 +46,7 @@ These hold regardless of which module is being touched:
 - **Injectable time.** Use `InqNanoTimeSource` for monotonic time (metrics, deadlines) and `InqClock` for wall-clock time (log timestamps, event metadata). Tests inject deterministic sources — never `Thread.sleep` or `System.nanoTime()` directly in tests.
 - **Functional decoration as the primary API.** Elements decorate `Supplier<T>`, `Runnable`, `Function<T,R>`, `CompletionStage<T>`. Annotation-based `@InqShield` is a convenience layer on top, not a separate execution path.
 - **First-registration-wins registries.** Registries never overwrite an existing instance; the provided config is ignored if the name is already present.
+- **Injectable time.** Time is an injected dependency, not ambient state. Code that needs durations or deadlines (metrics, timeouts, backoff) reads from a monotonic time source; code that needs timestamps (log entries, event metadata) reads from a wall-clock source. The two are separate abstractions — they have different correctness properties and must not be conflated. Direct calls to System.nanoTime(), System.currentTimeMillis(), or Instant.now() from algorithm code are forbidden.
 
 When in doubt about any ADR statement, verify against the code before trusting it.
 
@@ -75,7 +76,7 @@ All tests are JUnit 5 with AssertJ. Any new test Claude writes must follow this 
     - **Spring Boot context sharing across tests in the same class:** `@SpringBootTest` recycles the `ApplicationContext` between test methods within a single test class for performance. State changes made by one test method (e.g., a runtime strategy hot-swap) are visible to subsequent test methods in the same class. The standard pattern: use **disjoint resource names** per test method (e.g., a separate `@Bean InqElement` per test, named `aopHotSwap` vs. `aopRetune`), so each test exercises its own portion of the shared context without observing artefacts from prior tests. Combined with the `@Nested` caveat above, this means Spring Boot test classes are typically flat with method-level resource isolation, not nested with class-level isolation.
   
 - **AssertJ only** (`assertThat(...)`). No JUnit `assertEquals`, no Hamcrest.
-- **Deterministic time.** Inject `InqNanoTimeSource` or `InqClock` from an `AtomicLong`/`AtomicReference`. Never `Thread.sleep`.
+- **Deterministic time.** Inject a controllable time source — monotonic for durations and deadlines, wall-clock for timestamps — typically backed by an AtomicLong or AtomicReference. Never Thread.sleep, and never read System.nanoTime() or Instant.now() directly in tests.
 - Tests should be thorough. Cover happy path, edge cases, error conditions, and concurrency where relevant.
 - Tests are generally independent and isolated classes. In particular, they have no influence on other tests (in Spring Boot, there is often the case that Spring Boot captures too much information through classpath scanning).
 - Do not use mock libraries
