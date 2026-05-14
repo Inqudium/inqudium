@@ -1,6 +1,6 @@
 # ADR-036: Annotation model
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-05-05  
 **Deciders:** Core team
 
