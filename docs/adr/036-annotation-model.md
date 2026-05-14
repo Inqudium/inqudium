@@ -1,6 +1,6 @@
 # ADR-036: Annotation model
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-05-05  
 **Deciders:** Core team
 
@@ -106,9 +106,15 @@ call is determined by the optional `@InqShield` annotation. The annotation has t
   public Order placeOrder(Cart cart) { ... }
   ```
 
-  The evaluator wraps the method in the listed types' order, outermost first. The custom-order array is reusable
-  across methods and across services — authors can define a constant `private static final InqElementType[]
-  MY_ORDER = ...` and reference it from `@InqShield(customOrder = MY_ORDER)`.
+  The evaluator wraps the method in the listed types' order, outermost first. The array may list element types
+  that a given annotated source does not actually carry; the evaluator silently filters such entries out during
+  projection. The only requirement is that every element type that *is* present on the source must appear in
+  `customOrder` — otherwise the resolved order would be ambiguous for that source. Authors who want a stable
+  composition order across many methods declare the same `customOrder = {...}` array literal at each site;
+  Java's annotation grammar does not allow a `static final InqElementType[]` reference as a `customOrder`
+  value, so the reuse is source-level rather than constant-reference-level. The relaxed validation lets
+  each site select its own subset of those element types without having to align the customOrder literal
+  per site.
 
 Without an explicit `@InqShield`, the `"INQUDIUM"` default applies. Authors do not need to write
 `@InqShield(order = "INQUDIUM")` for the canonical case.
@@ -223,6 +229,13 @@ The evaluator follows Spring's convention for combining method-level and class-l
 - **Class-level annotations are searched up the class hierarchy via the JVM's `@Inherited` mechanism.** Inquudium's
   annotations are declared with `@Inherited`, so a class-level annotation on a superclass automatically applies to
   subclasses unless overridden.
+- **`@InqShield` falls under the same method-overrides-class rule.** When the evaluated method carries any
+  method-level resilience annotation, the ordering is read from the method's own `@InqShield` (if declared) or
+  defaulted to `"INQUDIUM"`; a class-level `@InqShield` declared on the implementation does **not** apply in this
+  case. Conversely, when only class-level resilience annotations apply (the class-level-only path), the
+  class-level `@InqShield` governs the ordering of those class-level annotations. In short, `@InqShield` is read
+  from the same `AnnotatedElement` as the element annotations whose ordering it controls; the method-versus-class
+  decision happens once for the whole annotation set, not separately for `@InqShield`.
 
 Concrete consequences with examples:
 
@@ -286,8 +299,6 @@ All annotation-related errors that can be detected from the configuration must s
 when the integration is being assembled — not at first invocation. The errors include:
 
 - An annotation referencing a name not present in the pipeline.
-- A `@InqShield(customOrder = ...)` whose array contains an `InqElementType` for which the method has no
-  corresponding annotation.
 - A method whose annotations include element types that are not listed in its `@InqShield(customOrder = ...)`,
   if `customOrder` is set.
 - A `@InqShield` declaration that sets both `order` and `customOrder` simultaneously.

@@ -50,8 +50,12 @@ import java.lang.annotation.Target;
  * }</pre>
  *
  * <h3>TYPE-level usage</h3>
- * <p>When placed on a class, applies to all public methods of that class.
- * Method-level {@code @InqShield} overrides the class-level ordering.</p>
+ * <p>When placed on a class, applies to methods of that class that fall onto
+ * the class-level-only path of the evaluator — that is, methods that declare
+ * no method-level resilience annotations of their own. A method that carries
+ * any method-level resilience annotation reads its ordering from the method's
+ * own {@code @InqShield} (or the {@code "INQUDIUM"} default if absent); the
+ * class-level {@code @InqShield} does not apply in that case. See ADR-036 §6.</p>
  *
  * @see InqCircuitBreaker
  * @see InqRetry
@@ -94,21 +98,24 @@ public @interface InqShield {
      *
      * <p>When non-empty, this attribute selects an explicit per-method
      * composition order and overrides the named strategy in {@link #order()}.
-     * The array's length must match the set of resilience-element annotations
-     * declared on the same method, and every entry must correspond to an
-     * annotation that is actually present. The evaluator enforces both
-     * conditions at construction time.</p>
+     * The resolved order must be unambiguous for every annotated source to
+     * which this {@code @InqShield} applies. Concretely: every
+     * resilience-element annotation declared on the source must appear in
+     * {@code customOrder}. The array may additionally list element types
+     * that the source does not carry — those extra entries are silently
+     * filtered out during projection, which lets a single shared constant
+     * be reused across sources whose annotation subsets differ. The
+     * evaluator enforces these rules at construction time.</p>
      *
-     * <p>Custom orderings can be defined once as a constant and referenced
-     * from many methods:</p>
+     * <p>Authors who want the same composition order across many methods
+     * declare the same {@code customOrder = {...}} array literal at each
+     * site. Java's annotation grammar does not allow a
+     * {@code static final InqElementType[]} reference as a {@code customOrder}
+     * value, so the reuse is source-level rather than
+     * constant-reference-level:</p>
      *
      * <pre>{@code
-     * private static final InqElementType[] MY_ORDER = {
-     *     InqElementType.BULKHEAD,
-     *     InqElementType.CIRCUIT_BREAKER
-     * };
-     *
-     * @InqShield(customOrder = MY_ORDER)
+     * @InqShield(customOrder = {InqElementType.BULKHEAD, InqElementType.CIRCUIT_BREAKER})
      * @InqBulkhead("orderBh")
      * @InqCircuitBreaker("orderCb")
      * public Order placeOrder(Cart cart) { ... }

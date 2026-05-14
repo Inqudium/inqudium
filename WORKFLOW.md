@@ -76,6 +76,27 @@ A prompt has these parts, in order:
   count as done. Always include "full reactor `mvn verify` green" as the baseline.
   Add scope-specific checks: repository-wide grep for absent terms, test count
   expectations, a smoke test or closure proof for structural changes.
+- **Completion log entry** — explicit instruction to update the consolidated
+  Completion log at the bottom of the plan document (`REFACTORING.md` or the parallel
+  plan). The implementation session flips the matching checkbox from `[ ]` to `[x]`
+  and appends the merge date and PR number in parentheses. The format is
+  `* [x] <sub-step-id> — <topic> (YYYY-MM-DD, PR #N)`. The update is part of the
+  sub-step's work and lands in the same PR.
+
+  Because the PR number is only known after `gh pr create` returns, the entry is
+  written in two commits on the sub-step branch:
+
+  1. The main sub-step commit sets the date and uses the placeholder `PR #TBD`, e.g.
+     `* [x] 6.B — InqShieldAspect introspection API (Library) (2026-05-02, PR #TBD)`.
+  2. Immediately after `gh pr create` returns the PR number, a small follow-up commit
+     on the same branch replaces `#TBD` with the actual number (commit message e.g.
+     `docs(refactoring): record PR number for 6.B in completion log`).
+
+  Amending the pushed commit is not an option — the project's git workflow forbids
+  rewriting pushed history (`CLAUDE.md`, *Don't manipulate Git history*). The
+  follow-up commit is the canonical pattern, and the review of the sub-step waits
+  until the follow-up has landed on the branch so the log entry is final before
+  approval.
 - **Report-form expectations** — what the implementation session should write back.
   This shapes the data this session needs for the review.
 - **Standing instructions** — "on scope-discrepancy, pause and ask, don't correct
@@ -126,24 +147,48 @@ What to look for, in rough priority order:
   pattern). If a sub-step introduces new Spring Boot tests, scrutinize for those
   patterns.
 
-When a sub-step is approved, log its completion in `REFACTORING.md` (or the parallel
-plan document, if the work belongs to a `REFACTORING_<NAME>.md`). Each section that
-defines a step or sub-step ends with a **completion log** — a bullet list at the bottom
-of that section. When the implementation session reports the step as done and this
-session approves, add an entry of the form:
+When a sub-step is approved, its completion is recorded in the **Completion log** at
+the bottom of `REFACTORING.md` (or the parallel plan document, if the work belongs to
+a `REFACTORING_<NAME>.md`). There is exactly one Completion log per plan document,
+and it sits at the very end. Per-sub-step completion entries inside the individual
+sub-step sections are not used — the consolidated log is the single source of truth.
+
+The Completion log is initialized when the plan is written: every sub-step appears
+as an unchecked entry, in plan order. A reader sees the full arc of the refactor and
+the current progress at a glance. An initialized log looks like this:
 
 ```
-- [x] 2025-04-30 14:32 — Stage 1: InqElement renamed to record-style accessors across 34 files
+## Completion log
+
+* [ ] 6.A — Plan document
+* [ ] 6.B — InqShieldAspect introspection API (Library)
+* [ ] 6.C — Function-based example
+* [ ] 6.D — Proxy-based example
+* [ ] 6.E — AspectJ example
+* [ ] 6.F — Spring-Framework example
+* [ ] 6.G — Spring-Boot example
+* [ ] 6.H — Documentation closure
 ```
 
-Each entry carries the date, the time, and a one-sentence topic that names what was
-accomplished — concrete enough that a later reader can see what the sub-step actually
-delivered, not just that it ran. The format is `- [x] YYYY-MM-DD HH:MM — <topic>`.
+When a sub-step lands, the matching checkbox is flipped to `[x]` and the merge date
+plus PR number are appended in parentheses:
 
-The completion log is a running record visible in the same document as the plan, so a
-reader scanning a sub-step section sees both the spec and the closure receipt next to
-each other. When `REFACTORING.md` is deleted at refactor end, the log goes with it; the
-audit trail at that point lives in the Git history and in the closed PRs.
+```
+* [x] 6.B — InqShieldAspect introspection API (Library) (2026-05-02, PR #39)
+```
+
+The format is `* [x] <sub-step-id> — <topic> (YYYY-MM-DD, PR #N)`. The topic matches
+the sub-step heading in the plan; the date is the merge date, not the report date, so
+the log reflects what is actually in `main`. The update itself is made by the
+implementation session as part of the sub-step's work and lands in the same PR (see
+the *Completion log entry* prompt part in section 2). This session's review confirms
+that the entry was set correctly before approving.
+
+The Completion log lives in the same document as the plan, so a reader scanning the
+plan sees the full sub-step list, the spec for each, and a single consolidated
+progress view at the bottom. When `REFACTORING.md` is deleted at refactor end, the log
+goes with it; the audit trail at that point lives in the Git history and in the
+closed PRs.
 
 After the review and the log entry, this session either approves (with a written summary
 that the maintainer can use as PR review feedback) or returns to the prompt-writing
@@ -158,8 +203,9 @@ Conventions:
 
 - **`REFACTORING.md`** lives at the repository root for the duration of the active
   refactor. Sub-step descriptions, audit-finding routing, a clear Phase-N closure
-  section that names what gets deleted at the end, and per-section completion logs
-  (see review section above). Deleted at refactor end together with its parallels.
+  section that names what gets deleted at the end, and a single consolidated
+  **Completion log** at the bottom of the document (see review section above).
+  Deleted at refactor end together with its parallels.
 - **`REFACTORING_<NAME>.md`** parallel documents for self-contained threads
   (`REFACTORING_DECORATOR_BRIDGE.md` was Phase 2's precedent for the ADR-033
   implementation). Same lifecycle as `REFACTORING.md`. Use one when a thread has

@@ -32,7 +32,9 @@ on each other.
 
 ### 1. Application model
 
-The library exposes proxy construction as a method on `InqPipeline`:
+The library exposes proxy construction through the `InqPipeline` interface. Among `InqPipeline`'s `protect`
+overloads (specified in ADR-037), the proxy integration is selected by the overload that takes a service
+interface class and a real target:
 
 ```java
 InqPipeline pipeline = InqPipeline.builder()
@@ -43,18 +45,18 @@ InqPipeline pipeline = InqPipeline.builder()
 OrderService service = pipeline.protect(OrderService.class, new DefaultOrderService(runtime));
 ```
 
-The `protect` call returns a proxy that implements the `OrderService` interface. The proxy is the object the
-application uses; the original `DefaultOrderService` implementation is held internally as the *real target* and is
-invoked at the bottom of the resilience-stack for each protected call.
+The `protect(Class<T>, T)` call returns a proxy that implements the `OrderService` interface. The proxy is the
+object the application uses; the original `DefaultOrderService` implementation is held internally as the *real
+target* and is invoked at the bottom of the resilience-stack for each protected call.
 
-The pipeline is the *available* set of resilience elements. Which elements actually wrap a specific method, and in
-what order, is determined by annotations on the implementation. The annotation evaluation follows ADR-036.
+The pipeline is the *available* set of resilience elements. Which elements actually wrap a specific method, and
+in what order, is determined by annotations on the implementation. The annotation evaluation follows ADR-036.
 
-There is no separate factory class in the user-facing API. The choice between synchronous, asynchronous, or hybrid
-dispatch is determined internally by the library based on the method signatures it encounters (per section 6) and
-on the paradigm modules present on the user's classpath (per ADR-037). Users who need only synchronous dispatch
-declare a dependency on `inqudium-pipeline`; users who need asynchronous dispatch additionally declare
-`inqudium-imperative`. The `pipeline.protect(...)` API is identical in both cases.
+There is no separate factory class in the user-facing API. The integration is selected by which `protect`
+overload the user invokes — functional decoration via `protect(Supplier<T>)`, proxy via `protect(Class<T>, T)`,
+and future overloads for other integrations. ADR-037 governs the module-level realisation: proxy support
+requires `inqudium-proxy` on the classpath, async dispatch within the proxy requires `inqudium-imperative`,
+and a missing module raises a descriptive `IllegalStateException` at the point of `protect(...)` invocation.
 
 ### 2. JDK Dynamic Proxy as the proxy mechanism
 
@@ -100,8 +102,7 @@ invoked, runs the entire selected resilience-stack around the real target's meth
 The cache entry holds:
 
 - The folded layer-action chain (the hot-path artefact).
-- The list of layer descriptions in outermost-first order (for diagnostic rendering, addressed separately at a
-  later time).
+- The list of layer descriptions in outermost-first order, surfaced through the introspection API of ADR-039.
 - The dispatch mode (sync or async, derived from the method's return type).
 
 The folding is done once at construction time and never repeated. Per-call dispatch reads the folded chain from the
@@ -109,9 +110,10 @@ cache and invokes it with no additional allocation beyond what the chain itself 
 
 The fold strategy is chosen for performance: a single composed lambda allows JIT escape analysis to inline the
 entire chain. The alternative — building a `Wrapper` hierarchy per method — would allocate one wrapper instance per
-layer per method and add an indirection per layer per call. Diagnostic introspection (hierarchy rendering and
-similar) is provided through the layer-description list rather than through a wrapper hierarchy. This trade-off
-prioritises hot-path performance over a uniform diagnostic surface across all integration technologies.
+layer per method and add an indirection per layer per call. Diagnostic introspection of the proxy's resilience
+structure is provided through the layer-description list and the `InqIntrospector` API (ADR-039), not through a
+wrapper hierarchy. This trade-off prioritises hot-path performance over a uniform in-process introspection
+surface while still offering full diagnostic access via the external introspector.
 
 #### Phase 3 — dispatch (per-call)
 
@@ -403,10 +405,6 @@ The following capabilities are explicitly not supported:
 - Stacked proxies are not optimised. Applications that benefit from stacking — for instance, layering a metrics
   proxy over a resilience proxy — pay the full cost of nested proxy machinery. The trade-off is accepted because
   the optimisation's complexity outweighs its benefit in expected use cases.
-- `Wrapper`-style introspection of the resilience-stack (for diagnostic rendering, similar to the previous
-  architecture's hierarchy rendering) is not supplied as a uniform method on every proxy. The layer-description
-  list is available in the cache entries but reaching it requires a deliberate diagnostic API rather than a casual
-  cast. This is treated as a follow-up concern.
 - The minimum supported JDK is Java 16 due to the dependence on `InvocationHandler.invokeDefault`. The library
   can document this as a baseline; application authors using older JDK versions must upgrade or use a different
   integration technology.
@@ -434,3 +432,9 @@ The following capabilities are explicitly not supported:
   future Reactor) are handled. The user-facing API (`pipeline.protect(...)`) is identical across all paradigm
   configurations; ADR-037 governs the module-level realisation that makes this single API work for varying
   classpath shapes.
+- The relationship to ADR-039 (uniform stack introspection) is diagnostic: ADR-039 specifies the
+  `InqIntrospector` API that surfaces the proxy's per-method cache entries — layer descriptions, dispatch
+  modes, method-to-layer mappings — as a uniform `InqStackInfo` DTO usable across all wrapping paradigms. The
+  proxy adapter for the introspector reads from the per-method cache structure defined here and produces
+  `ProxyStackInfo` instances. Per ADR-037 module conventions, the proxy adapter lives in `inqudium-proxy`
+  alongside the dispatcher.
