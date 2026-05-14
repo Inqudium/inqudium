@@ -21,8 +21,8 @@ consume.
 2. A bridge-method resolver that implements the reflection-only algorithm
    from ADR-036 §5.
 3. A method resolver that combines the bridge-method resolver with the
-   default-method pass-through rule and the class-hierarchy walk from
-   ADR-036 §5 and §6.
+   default-method pass-through rule, and an inheritance resolver that
+   applies the §6 inheritance semantics on top.
 4. An ordering resolver that reads `@InqShield`, validates the rules from
    ADR-036 §9 that are decidable at the `@InqShield` layer, and returns the
    ordered list of element types for a given method.
@@ -98,9 +98,8 @@ each individual prompt:
   extending `IllegalStateException`, residing in
   `eu.inqudium.annotation.evaluator` — carries all evaluator-detected
   configuration errors. The exception message identifies the offending
-  class, method, annotation, and attribute value where applicable. It is
-  introduced by the first sub-step that needs to throw it (currently
-  sub-step 2).
+  class, method, annotation, and attribute value where applicable.
+  Introduced in sub-step 2.
 - On any scope discrepancy between this plan and the code as it actually
   exists, the implementation session pauses and asks rather than silently
   correcting.
@@ -236,73 +235,182 @@ generic interfaces) that exercise:
 - The resolver class itself has no public API surface beyond the single
   static method.
 
-## Sub-step 3: `MethodResolver` and `InheritanceResolver`
+## Sub-step 3: `MethodResolver`, `AnnotationSource`, and `InheritanceResolver`
 
 ### Goal
 
 Implement the two collaborators that, given an interface method and an
-implementation class, return either the annotation-source method on the
-implementation (or one of its superclasses) or the pass-through marker.
+implementation class, identify both the method whose signature drives
+dispatch and the location from which annotations should be read.
 Combined, they realise ADR-036 §5 (method resolution) and §6
-(inheritance).
+(inheritance), and they introduce the package-private structured result
+type that downstream sub-steps consume.
 
 ### Spec
 
-`MethodResolver` is a package-private interface:
+#### `MethodResolver`
+
+Package-private interface in `eu.inqudium.annotation.evaluator`:
 
 ```java
 interface MethodResolver {
     Optional<Method> resolveAnnotationSourceMethod(
-            Method interfaceMethod, Class<?> implementationClass);
+            Method interfaceMethod, Class<?> targetClass);
 }
 ```
 
-An empty `Optional` means pass-through — either the interface method is a
-default method and the implementation does not override it, or the resolved
-method (after applying inheritance rules) carries no resilience
-annotations.
+Returns a `Method` declared on `targetClass` whose signature matches
+`interfaceMethod`, with bridge methods resolved to their typed
+counterparts. An empty `Optional` means:
+
+- The interface method is a default method and `targetClass` does not
+  override it, or
+- `targetClass` does not declare a method matching the interface
+  method's signature.
 
 The default implementation:
 
-1. If the interface method has a default body and the implementation does
-   not override it, returns `Optional.empty()`.
-2. Otherwise, looks up the method on the implementation class. If the
-   returned method `isBridge()`, delegates to `BridgeMethodResolver`.
-3. Returns the non-bridge typed method as the candidate annotation source.
+1. If the interface method is a default method and `targetClass` does
+   not override it (no matching method on `targetClass` itself or any
+   superclass that overrides the default), return `Optional.empty()`.
+2. Otherwise, query `targetClass.getDeclaredMethods()` for a method
+   with the same name and parameter types. If none is found on
+   `targetClass` itself, return `Optional.empty()` — the caller
+   (`InheritanceResolver`) will walk further up the hierarchy if
+   needed.
+3. If the returned method `isBridge()`, delegate to
+   `BridgeMethodResolver.resolveBridge`. Otherwise, return it
+   directly.
 
-`InheritanceResolver` wraps `MethodResolver` to apply ADR-036 §6:
+The contract names the input parameter `targetClass`, not
+`implementationClass`, because the resolver is reused at each level of
+the hierarchy walk in `InheritanceResolver`.
 
-- Method-level annotations override class-level annotations completely.
-  If the resolved method carries any Inqudium element annotation, those
-  annotations are the sole source.
-- If the resolved method carries no element annotation, the resolver
-  walks the class hierarchy upward (`getSuperclass()`) looking for an
-  overridden method with annotations.
-- Class-level annotations apply only when no method-level annotation is
-  found anywhere in the chain. Class-level annotations are picked up via
-  the JVM's `@Inherited` mechanism, because the Inqudium annotations are
-  already declared `@Inherited`.
+#### `AnnotationSource`
 
-The return contract: `InheritanceResolver` returns a `Method` whose
-annotations (either method-level or via class-level fallback) constitute
-the effective resilience configuration, or `Optional.empty()` for
-pass-through.
+A package-private sealed result type expressing the three outcomes of
+the inheritance walk:
+
+```java
+sealed interface AnnotationSource {
+
+    /**
+     * Method-level resilience annotations were found. Annotations live
+     * on {@code method}, which may be the implementation's own method or
+     * an inherited method on a superclass.
+     */
+    record MethodLevel(Method method) implements AnnotationSource {}
+
+    /**
+     * No method-level resilience annotations exist anywhere in the
+     * hierarchy, but the implementation class carries class-level
+     * resilience annotations (possibly via {@code @Inherited}).
+     * The signature method drives dispatch; the annotations are read
+     * from {@code annotationSourceClass}.
+     */
+    record ClassLevelOnly(Method signatureMethod,
+                          Class<?> annotationSourceClass)
+            implements AnnotationSource {}
+
+    /**
+     * No resilience annotations apply to this method.
+     */
+    record PassThrough() implements AnnotationSource {}
+}
+```
+
+`annotationSourceClass` is the implementation class passed into
+`InheritanceResolver.resolve` — the caller reads class-level
+annotations from it via standard reflection. The field is present
+explicitly rather than being derived from `signatureMethod.getDeclaringClass()`,
+because the latter may point at a superclass while class-level
+inheritance is rooted at the original implementation class.
+
+#### `InheritanceResolver`
+
+Package-private interface:
+
+```java
+interface InheritanceResolver {
+    AnnotationSource resolve(Method interfaceMethod, Class<?> implementationClass);
+}
+```
+
+The default implementation composes `MethodResolver` and applies ADR-036
+§6:
+
+1. **Pass-through gate.** Invoke
+   `methodResolver.resolveAnnotationSourceMethod(interfaceMethod, implementationClass)`.
+   If the result is empty *and* `interfaceMethod` is a default method
+   that the implementation does not override, return
+   `AnnotationSource.PassThrough`.
+2. **Method-level hierarchy walk.** Starting at `implementationClass`
+   and proceeding upward via `getSuperclass()` (stopping at `Object`),
+   invoke `methodResolver.resolveAnnotationSourceMethod(interfaceMethod, currentClass)`
+   at each level. The first method that carries any Inqudium resilience
+   element annotation wins; return `AnnotationSource.MethodLevel(method)`.
+3. **Class-level fallback.** If no method-level annotation was found
+   anywhere in the walk, check whether `implementationClass` has any
+   class-level resilience annotation (this picks up `@Inherited`
+   class-level annotations from superclasses transparently via standard
+   reflection). If yes, return
+   `AnnotationSource.ClassLevelOnly(signatureMethod, implementationClass)`,
+   where `signatureMethod` is whichever method came back from the
+   `MethodResolver` invocation on `implementationClass`. If even that
+   was empty, the implementation does not have any method matching the
+   interface — return `AnnotationSource.PassThrough`.
+4. Otherwise, return `AnnotationSource.PassThrough`.
+
+The Spring-strict rule is encoded in step 2: as soon as a method-level
+annotation is found, the walk stops, and class-level annotations are
+ignored entirely.
 
 ### Tests
 
-The fixtures exercise:
+A test class (or two test classes, one per resolver — implementation's
+choice) covers at least the following cases. Each case is a static
+nested fixture; do not scatter top-level fixtures across the package.
 
-- Default method, implementation does not override → pass-through.
-- Default method, implementation overrides → implementation method.
-- Generic interface produces a bridge on the implementation → typed
-  method returned.
-- Method-level annotation on impl overrides class-level annotation
-  (different element type on class vs. method).
-- Method without annotation on impl, class-level annotation present →
-  effective configuration is the class-level annotation.
-- Method without annotation on impl, superclass method has annotation →
-  superclass annotation is the source.
-- Method without annotation anywhere in chain → pass-through.
+- **MethodResolver — default method not overridden:** Interface declares
+  a default method; impl does not override. → `Optional.empty()`.
+- **MethodResolver — default method overridden:** Impl overrides the
+  default. → returns the impl's method.
+- **MethodResolver — bridge delegation:** Generic interface produces a
+  bridge on the impl. → returns the typed (non-bridge) method.
+- **MethodResolver — method not declared on target class:** Method is
+  inherited from a superclass but not declared on the queried class.
+  → `Optional.empty()` (so `InheritanceResolver` can walk to the
+  superclass).
+- **InheritanceResolver — PassThrough on default method:** Default method,
+  not overridden, no annotations. → `PassThrough`.
+- **InheritanceResolver — PassThrough on unannotated chain:** Impl
+  method has no annotations, no class-level anywhere in the chain.
+  → `PassThrough`.
+- **InheritanceResolver — MethodLevel on direct impl:** Impl method
+  carries a resilience annotation. → `MethodLevel(implMethod)`.
+- **InheritanceResolver — MethodLevel on direct parent:** Impl inherits
+  method from parent; parent's method has a resilience annotation.
+  → `MethodLevel(parentMethod)`.
+- **InheritanceResolver — MethodLevel on deep ancestor:** Impl + parent
+  + grandparent; only grandparent carries the method-level annotation.
+  → `MethodLevel(grandparentMethod)`.
+- **InheritanceResolver — MethodLevel via bridge:** Generic interface,
+  impl class with bridge + typed method, typed method has the
+  annotation. → `MethodLevel(typedMethod)`. Verifies that the bridge
+  resolution from sub-step 2 plays correctly into the inheritance walk.
+- **InheritanceResolver — MethodLevel overrides class-level:** Impl
+  class has class-level `@InqBulkhead`; impl method has method-level
+  `@InqRetry` (different element type). → `MethodLevel(implMethod)` —
+  class-level is *not* mixed in.
+- **InheritanceResolver — ClassLevelOnly, direct on impl:** Impl class
+  has class-level annotation; method has none. →
+  `ClassLevelOnly(implMethod, implClass)`.
+- **InheritanceResolver — ClassLevelOnly via `@Inherited` from
+  superclass:** Parent class carries the class-level annotation; impl
+  inherits it via `@Inherited`. Method has no method-level annotation
+  anywhere. → `ClassLevelOnly(implMethod, implClass)`. The
+  `annotationSourceClass` is the impl class, not the parent — class-level
+  inheritance is transparent through standard reflection.
 
 ### What this sub-step does NOT do
 
@@ -311,14 +419,20 @@ The fixtures exercise:
 - Check that referenced element names exist in the pipeline. That is
   sub-step 5.
 - Order the annotations. That is sub-step 4.
+- Read the actual annotation values — the resolvers locate where
+  annotations live; reading them is the caller's job.
 
 ### Verification gates
 
 - Full reactor `mvn verify` is green.
-- Each test fixture is a static nested class within the test class (no
-  scattered top-level fixtures).
-- Sub-step 2's `BridgeMethodResolver` is exercised by at least one
-  fixture that produces a real compiler-generated bridge method.
+- Test fixtures are static nested classes within the test class(es) — no
+  scattered top-level fixtures in the test package.
+- At least one fixture exercises `BridgeMethodResolver` indirectly
+  through the `MethodResolver` → bridge path.
+- All three `AnnotationSource` variants (`MethodLevel`, `ClassLevelOnly`,
+  `PassThrough`) are reached by at least one test each. For
+  `ClassLevelOnly`, both the direct-on-impl and the `@Inherited`-from-
+  superclass paths have separate tests.
 
 ## Sub-step 4: `OrderingResolver`
 
@@ -417,16 +531,24 @@ public interface AnnotationEvaluator {
 
 For each method on `serviceInterface`:
 
-1. Resolve the annotation-source method via `InheritanceResolver`.
-2. If pass-through → `MethodPlan.PassThrough`.
-3. Otherwise:
-   - Read all element annotations from the source method.
-   - For each annotation, verify the referenced name exists in the
-     pipeline. Otherwise, throw `InqAnnotationConfigurationException`.
-   - Resolve the ordering via `OrderingResolver`.
-   - Project each ordered element type onto its corresponding element
-     name from the annotations.
-   - Wrap in `MethodPlan.Decorated`.
+1. Invoke `InheritanceResolver.resolve(interfaceMethod, implementationClass)`,
+   yielding an `AnnotationSource`.
+2. Dispatch on the result:
+   - `PassThrough` → `MethodPlan.PassThrough`.
+   - `MethodLevel(method)` → read all Inqudium element annotations from
+     `method`. The annotations are method-scope; class-level annotations
+     on the implementation are ignored, per ADR-036 §6.
+   - `ClassLevelOnly(signatureMethod, annotationSourceClass)` → read
+     all Inqudium element annotations from `annotationSourceClass`.
+     The annotations are class-scope; the method itself has none.
+3. Once annotations are gathered (in the method-level or class-level
+   case), verify that every referenced element name exists in the
+   pipeline. Otherwise, throw `InqAnnotationConfigurationException`.
+4. Resolve the ordering via `OrderingResolver.resolveOrder` — invoked
+   on the same `AnnotatedElement` whose annotations are in play
+   (the method for `MethodLevel`, the class for `ClassLevelOnly`).
+5. Project the ordered element types onto their corresponding element
+   names from the annotations. Wrap in `MethodPlan.Decorated`.
 
 Fail-fast: the first error in any method aborts the entire evaluation.
 
@@ -446,9 +568,11 @@ The cache key on the resulting map is the interface method, per ADR-036
 - Annotation references an element name not in the pipeline → fails with
   descriptive message.
 - Class-level annotation, method without method-level annotation →
-  effective plan derived from class-level.
+  `Decorated` derived from class-level annotations (`ClassLevelOnly`
+  path).
 - Method-level annotation overrides class-level annotation of a different
-  type — the class-level annotation does not contribute to the plan.
+  type — the class-level annotation does not contribute to the plan
+  (`MethodLevel` path; class-level is ignored).
 - Generic interface with a bridge method on the implementation → plan is
   resolved against the typed method's annotations and cached against
   the interface method.
@@ -469,6 +593,7 @@ The cache key on the resulting map is the interface method, per ADR-036
   the test list above.
 - The evaluator has no public collaborators beyond the static factory,
   the `evaluate` method, the result type, and the plan sealed hierarchy.
+  `AnnotationSource` remains package-private.
 
 ## Phase closure
 
@@ -493,6 +618,6 @@ When all sub-steps are approved:
 
 - [x] 1 — `@InqShield` aligned with ADR-036 §3 (2026-05-14, PR #53)
 - [x] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException` (2026-05-14, PR #54)
-- [ ] 3 — `MethodResolver` and `InheritanceResolver`
+- [ ] 3 — `MethodResolver`, `AnnotationSource`, and `InheritanceResolver`
 - [ ] 4 — `OrderingResolver`
 - [ ] 5 — `AnnotationEvaluator`
