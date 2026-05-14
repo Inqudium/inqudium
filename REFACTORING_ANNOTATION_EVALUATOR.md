@@ -41,18 +41,43 @@ consume.
 - Meta-annotation support. ADR-036 §10 explicitly defers this.
 - Annotation lookup on interface methods. ADR-036 §2 excludes this by
   design.
+- **Migration of `inqudium-annotation-support` to use the new evaluator.**
+  That module is the legacy annotation consumer (predates ADR-036) and
+  currently uses `@InqShield(order = "CUSTOM")`. Its replacement by the new
+  evaluator is the responsibility of a separate session and is explicitly
+  out of scope here. See "Existing module landscape" below for the
+  consequence.
 
 ## Module and package layout
 
 - **Module:** `inqudium-annotation` (existing).
 - **Existing package:** `eu.inqudium.annotation` — the annotation classes
   themselves continue to live here.
-- **New package:** `eu.inqudium.annotation.evaluator` — the evaluator and its
-  internal collaborators.
+- **New package:** `eu.inqudium.annotation.evaluator` — the evaluator and
+  its internal collaborators, plus the dedicated configuration exception
+  type.
 - **Module dependency:** `inqudium-annotation` depends on `inqudium-core`
   for `InqElementType`, `InqPipeline`, and the existing
-  `PipelineOrdering.Profiles.RESILIENCE4J` ordering. If the POM does not yet
-  declare this dependency, sub-step 1 adds it.
+  `PipelineOrdering.Profiles.RESILIENCE4J` ordering. Added in sub-step 1.
+
+## Existing module landscape
+
+The repository contains an existing module `inqudium-annotation-support`
+that predates ADR-036. It carries a legacy annotation scanner and a
+pipeline factory that consume `@InqShield(order = "CUSTOM")` directly.
+
+This phase **does not modify** that module. The phase produces a new
+evaluator in `inqudium-annotation`; the migration of any caller from the
+legacy support module to the new evaluator is the responsibility of a
+separate session.
+
+A practical consequence: after sub-step 1, the legacy module's `"CUSTOM"`
+code path remains in place and the module continues to build green, but
+no new `@InqShield` caller can target that path (the value is no longer
+recognised by the evaluator-to-be). This is expected, transient drift; it
+resolves when the separate migration session lands. At phase closure, a
+`TODO.md` entry should remain to flag the deprecation pending so the
+migration session has a clear pointer.
 
 ## Conventions for all sub-steps
 
@@ -69,13 +94,23 @@ each individual prompt:
   analysis, no external utilities, no Spring imports.
 - Fail-fast on validation errors: the first error aborts the evaluation
   with a descriptive exception. No error accumulation.
-- A dedicated exception type (`InqAnnotationConfigurationException`,
-  extending `IllegalStateException`) carries all evaluator-detected
+- A dedicated exception type — `InqAnnotationConfigurationException`,
+  extending `IllegalStateException`, residing in
+  `eu.inqudium.annotation.evaluator` — carries all evaluator-detected
   configuration errors. The exception message identifies the offending
-  class, method, annotation, and attribute value where applicable.
+  class, method, annotation, and attribute value where applicable. It is
+  introduced by the first sub-step that needs to throw it (currently
+  sub-step 2).
 - On any scope discrepancy between this plan and the code as it actually
   exists, the implementation session pauses and asks rather than silently
   correcting.
+- Javadoc verification gates ignore warnings on files this sub-step did
+  not touch (pre-existing warnings on the other element annotations are
+  known and tracked separately).
+- Every sub-step finishes by adding its own entry to the consolidated
+  `## Completion log` section at the bottom of this document. The entry
+  carries the sub-step ID, a short topic, the completion date, and the PR
+  number.
 
 ## Sub-step 1: Align `@InqShield` with ADR-036 §3
 
@@ -113,34 +148,24 @@ Validation logic (mutual exclusion, well-formedness of `customOrder`) is
 ### Module dependency
 
 If `inqudium-annotation/pom.xml` does not yet declare a dependency on
-`inqudium-core`, the implementation session adds it. The dependency is
-required because `customOrder` returns `InqElementType[]`, which lives in
-`inqudium-core`.
+`inqudium-core`, the implementation session adds it.
 
 ### What this sub-step does NOT do
 
 - Implement any evaluator logic.
 - Validate mutual exclusion of `order` and `customOrder`.
 - Migrate any caller code that might use `@InqShield(order = "CUSTOM")`.
-  If such callers exist anywhere in the repository, the implementation
-  session pauses and reports them; the assumption is that none exist
-  because ADR-036 is in Proposed status and no evaluator yet consumes the
-  annotation.
 
 ### Verification gates
 
 - Full reactor `mvn verify` is green.
 - Repository-wide grep for the literal `"CUSTOM"` in any `@InqShield(...)`
-  context returns zero matches.
-- A new test class (location and naming per the implementation session's
-  judgment, but consistent with the project conventions) verifies via
-  reflection that `@InqShield` declares exactly the two expected attributes
-  with their expected default values.
-- The Javadoc renders without warnings (`mvn javadoc:javadoc` clean).
-
-### Completion log
-
-_(populated when the sub-step is approved)_
+  context outside `inqudium-annotation` itself returns either zero matches
+  or matches confined to `inqudium-annotation-support` (the legacy module,
+  out of scope here).
+- A new test class verifies via reflection that `@InqShield` declares
+  exactly the two expected attributes with their expected default values.
+- The Javadoc renders without new warnings on the changed file.
 
 ## Sub-step 2: `BridgeMethodResolver`
 
@@ -148,7 +173,9 @@ _(populated when the sub-step is approved)_
 
 Implement the reflection-only bridge-method resolution algorithm from
 ADR-036 §5 as a package-private utility in
-`eu.inqudium.annotation.evaluator`.
+`eu.inqudium.annotation.evaluator`. Introduce the dedicated configuration
+exception type `InqAnnotationConfigurationException` as part of this
+sub-step.
 
 ### Spec
 
@@ -188,7 +215,7 @@ generic interfaces) that exercise:
 - Multiple type parameters → multiple bridges, each resolves
   independently.
 - Chained bridges within the same class — the typed method lives on the
-  same class as the bridge.
+  same class as the bridges.
 - Ambiguity case — two typed candidates both satisfy the algorithm;
   expect `InqAnnotationConfigurationException` listing both.
 - No-match case — synthetic constellation where no typed method matches
@@ -208,10 +235,6 @@ generic interfaces) that exercise:
   test method.
 - The resolver class itself has no public API surface beyond the single
   static method.
-
-### Completion log
-
-_(populated when the sub-step is approved)_
 
 ## Sub-step 3: `MethodResolver` and `InheritanceResolver`
 
@@ -297,10 +320,6 @@ The fixtures exercise:
 - Sub-step 2's `BridgeMethodResolver` is exercised by at least one
   fixture that produces a real compiler-generated bridge method.
 
-### Completion log
-
-_(populated when the sub-step is approved)_
-
 ## Sub-step 4: `OrderingResolver`
 
 ### Goal
@@ -369,10 +388,6 @@ Logic:
   `@InqShield` layer has at least one negative test pinning the error
   message.
 - Positive paths cover all three ordering modes.
-
-### Completion log
-
-_(populated when the sub-step is approved)_
 
 ## Sub-step 5: `AnnotationEvaluator`
 
@@ -455,21 +470,29 @@ The cache key on the resulting map is the interface method, per ADR-036
 - The evaluator has no public collaborators beyond the static factory,
   the `evaluate` method, the result type, and the plan sealed hierarchy.
 
-### Completion log
-
-_(populated when the sub-step is approved)_
-
 ## Phase closure
 
 When all sub-steps are approved:
 
 1. ADR-036 transitions from "Proposed" to "Accepted" in a separate commit
    by the maintainer. The phase does not change ADR status itself.
-2. This document is deleted. Its content has moved to the code (the
-   evaluator and its tests), to the ADR (already there), and possibly to
-   `TODO.md` for any deferred items that surfaced during execution.
-3. If any audit-style findings surfaced during the phase (e.g.
+2. A `TODO.md` entry remains for the deprecation of
+   `inqudium-annotation-support`: the legacy `"CUSTOM"` code path is no
+   longer reachable from new `@InqShield` callers, and the module needs
+   replacement by a separate session.
+3. This document is deleted. Its content has moved to the code (the
+   evaluator and its tests), to the ADR (already there), and to `TODO.md`
+   for any deferred items that surfaced during execution.
+4. If any audit-style findings surfaced during the phase (e.g.
    constellations the bridge-method resolver cannot handle but that
    appear in real user code), they are routed: into `TODO.md` if they
    constitute deferred work, into a follow-up sub-step inside this phase
    if they block phase closure, into `IDEAS.md` if they are speculative.
+
+## Completion log
+
+- [x] 1 — `@InqShield` aligned with ADR-036 §3 (2026-05-14, PR #53)
+- [ ] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException`
+- [ ] 3 — `MethodResolver` and `InheritanceResolver`
+- [ ] 4 — `OrderingResolver`
+- [ ] 5 — `AnnotationEvaluator`
