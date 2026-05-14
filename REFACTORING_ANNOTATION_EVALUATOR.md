@@ -618,6 +618,6 @@ When all sub-steps are approved:
 
 - [x] 1 — `@InqShield` aligned with ADR-036 §3 (2026-05-14, PR #53)
 - [x] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException` (2026-05-14, PR #54)
-- [ ] 3 — `MethodResolver`, `AnnotationSource`, and `InheritanceResolver`
+- [x] 3 — `MethodResolver`, `AnnotationSource`, and `InheritanceResolver` (2026-05-14, PR #TBD)
 - [ ] 4 — `OrderingResolver`
 - [ ] 5 — `AnnotationEvaluator`
