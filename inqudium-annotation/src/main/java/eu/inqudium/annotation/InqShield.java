@@ -1,5 +1,7 @@
 package eu.inqudium.annotation;
 
+import eu.inqudium.core.element.InqElementType;
+
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Inherited;
@@ -23,7 +25,8 @@ import java.lang.annotation.Target;
  *   <tr><td>Canonical order (default)</td><td>No — element annotations alone are sufficient</td></tr>
  *   <tr><td>Canonical order (explicit)</td><td>Optional — equivalent to absent</td></tr>
  *   <tr><td>Resilience4J order</td><td>Yes — {@code @InqShield(order = "RESILIENCE4J")}</td></tr>
- *   <tr><td>Custom order</td><td>Yes — {@code @InqShield(order = "CUSTOM")}</td></tr>
+ *   <tr><td>Custom order</td><td>Yes — {@code @InqShield(customOrder = {...})} with an explicit
+ *       {@link InqElementType} array</td></tr>
  * </table>
  *
  * <h3>Usage examples</h3>
@@ -39,8 +42,8 @@ import java.lang.annotation.Target;
  * @InqRetry("paymentRetry")
  * public PaymentResult processPayment(PaymentRequest request) { ... }
  *
- * // Custom ordering — elements applied in annotation declaration order:
- * @InqShield(order = "CUSTOM")
+ * // Custom ordering — outermost first:
+ * @InqShield(customOrder = {InqElementType.RETRY, InqElementType.CIRCUIT_BREAKER})
  * @InqRetry("rt")
  * @InqCircuitBreaker("cb")
  * public PaymentResult processPayment(PaymentRequest request) { ... }
@@ -65,23 +68,57 @@ import java.lang.annotation.Target;
 public @interface InqShield {
 
     /**
-     * The pipeline ordering to use.
+     * Named pipeline-ordering strategy.
      *
+     * <p>Recognised values:
      * <ul>
      *   <li>{@code "INQUDIUM"} (default) — elements sorted into canonical order
-     *       (ADR-017): TimeLimiter → TrafficShaper → RateLimiter → Bulkhead →
-     *       CircuitBreaker → Retry</li>
-     *   <li>{@code "RESILIENCE4J"} — elements sorted into R4J-compatible order:
-     *       Retry → CircuitBreaker → TrafficShaper → RateLimiter → TimeLimiter →
-     *       Bulkhead</li>
-     *   <li>{@code "CUSTOM"} — elements applied in annotation declaration order
-     *       on the method</li>
+     *       per {@link InqElementType#defaultPipelineOrder()}:
+     *       TimeLimiter → TrafficShaper → RateLimiter → Bulkhead →
+     *       CircuitBreaker → Retry, outermost to innermost (ADR-017).</li>
+     *   <li>{@code "RESILIENCE4J"} — elements sorted into Resilience4j-compatible
+     *       order: Retry → CircuitBreaker → TrafficShaper → RateLimiter →
+     *       TimeLimiter → Bulkhead, outermost to innermost.</li>
      * </ul>
      *
-     * <p>String values are used instead of an enum to keep this annotation
-     * artifact free of runtime dependencies.</p>
+     * <p>Mutually exclusive with {@link #customOrder()}. The two attributes
+     * must not both be set; the evaluator rejects such combinations at
+     * construction time.</p>
      *
-     * @return the ordering name
+     * @return the ordering strategy name
      */
     String order() default "INQUDIUM";
+
+    /**
+     * Explicit ordering by element type, outermost first.
+     *
+     * <p>When non-empty, this attribute selects an explicit per-method
+     * composition order and overrides the named strategy in {@link #order()}.
+     * The array's length must match the set of resilience-element annotations
+     * declared on the same method, and every entry must correspond to an
+     * annotation that is actually present. The evaluator enforces both
+     * conditions at construction time.</p>
+     *
+     * <p>Custom orderings can be defined once as a constant and referenced
+     * from many methods:</p>
+     *
+     * <pre>{@code
+     * private static final InqElementType[] MY_ORDER = {
+     *     InqElementType.BULKHEAD,
+     *     InqElementType.CIRCUIT_BREAKER
+     * };
+     *
+     * @InqShield(customOrder = MY_ORDER)
+     * @InqBulkhead("orderBh")
+     * @InqCircuitBreaker("orderCb")
+     * public Order placeOrder(Cart cart) { ... }
+     * }</pre>
+     *
+     * <p>An empty array (the default) means "not set" — Java annotation
+     * defaults cannot represent {@code null}. Mutually exclusive with
+     * {@link #order()}.</p>
+     *
+     * @return the explicit ordering, or an empty array if not set
+     */
+    InqElementType[] customOrder() default {};
 }
