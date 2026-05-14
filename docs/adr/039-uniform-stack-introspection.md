@@ -1,4 +1,4 @@
-# ADR-038: Uniform stack introspection across wrapping paradigms
+# ADR-039: Uniform stack introspection across wrapping paradigms
 
 **Status:** Proposed
 **Date:** 2026-05-13
