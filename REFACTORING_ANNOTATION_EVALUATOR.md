@@ -25,7 +25,9 @@ consume.
    applies the §6 inheritance semantics on top.
 4. An ordering resolver that reads `@InqShield`, validates the rules from
    ADR-036 §9 that are decidable at the `@InqShield` layer, and returns the
-   ordered list of element types for a given method.
+   ordered list of element types for a given annotated element (either a
+   method, for the method-level path, or a class, for the class-level
+   path).
 5. A top-level annotation evaluator that composes the above and, for a given
    pipeline + service interface + implementation class, produces a
    per-method `MethodPlan`. The plan is either pass-through or a decorated
@@ -494,62 +496,91 @@ intermediate-class cases explicitly covered.
 
 ### Goal
 
-Read `@InqShield` from the annotation-source method, validate the
+Read `@InqShield` from a given annotated element (a `Method` for the
+method-level path, a `Class` for the class-level path), validate the
 `@InqShield`-layer rules from ADR-036 §9, and return the ordered list of
-element types (outermost first) for that method.
+element types (outermost first) for that element.
 
 ### Spec
 
+Package-private interface in `eu.inqudium.annotation.evaluator`:
+
 ```java
 interface OrderingResolver {
-    List<InqElementType> resolveOrder(Method annotationSource);
+    List<InqElementType> resolveOrder(AnnotatedElement annotationSource);
 }
 ```
+
+`AnnotatedElement` is the `java.lang.reflect` interface implemented by
+both `Method` and `Class<?>`. Using it directly lets the same resolver
+handle both the `MethodLevel` and `ClassLevelOnly` paths from
+`AnnotationSource` without overloads or wrappers.
 
 Logic:
 
 1. Read all Inqudium element annotations from `annotationSource` and
    determine the set of present element types.
-2. Read `@InqShield` from `annotationSource`. If absent, use the
-   `"INQUDIUM"` default with no further `@InqShield` validation.
+2. Read `@InqShield` from `annotationSource`. If absent, treat as
+   `order = "INQUDIUM"` with empty `customOrder` and no further
+   `@InqShield` validation.
 3. If `@InqShield` is present:
    - If `customOrder.length > 0` and `order` is not the default
      `"INQUDIUM"`, throw `InqAnnotationConfigurationException` (mutual
      exclusion).
    - If `customOrder.length > 0`:
-     - Every element type present on the method must appear in
-       `customOrder`. Otherwise, throw.
+     - Every element type present on the annotation source must appear
+       in `customOrder`. Otherwise, throw.
      - Every entry in `customOrder` must correspond to a present element
-       type on the method. Otherwise, throw.
+       type on the annotation source. Otherwise, throw.
      - The ordering is the `customOrder` array, taken as-is.
-   - Else if `order` is `"INQUDIUM"` → sort by
+   - Else if `order` is `"INQUDIUM"` → sort the present types by
      `InqElementType.defaultPipelineOrder()` ascending.
-   - Else if `order` is `"RESILIENCE4J"` → sort by the existing
-     `PipelineOrdering.Profiles.RESILIENCE4J` ordering.
+   - Else if `order` is `"RESILIENCE4J"` → sort the present types by the
+     existing `PipelineOrdering.Profiles.RESILIENCE4J` ordering.
    - Else → throw `InqAnnotationConfigurationException` (unknown `order`).
 4. Return the ordered list.
 
+If the annotation source carries no element annotations at all, the
+resolver returns an empty list (no exception). This case does not arise
+under normal evaluator operation — the caller ensures element
+annotations are present before invoking — but the empty result is the
+mathematically consistent behaviour ("sort the empty set in any order
+→ empty").
+
+Defensive checks at entry: reject `null` with `IllegalArgumentException`.
+
 ### Tests
 
-- No `@InqShield`, single element annotation → default order.
-- No `@InqShield`, multiple element annotations → INQUDIUM order applied.
-- Explicit `@InqShield(order = "RESILIENCE4J")` with multiple annotations
-  → R4J order applied.
-- `customOrder` with one annotation → that single type in the list.
+- No `@InqShield`, single element annotation on a method → default
+  INQUDIUM order, the single type returned.
+- No `@InqShield`, multiple element annotations on a method →
+  INQUDIUM order applied.
+- Explicit `@InqShield(order = "RESILIENCE4J")` with multiple
+  annotations → R4J order applied.
+- `customOrder` with a single annotation → that single type in the list.
 - `customOrder` with multiple annotations in non-default order → that
   exact order returned.
 - `@InqShield` with both `order = "RESILIENCE4J"` and a non-empty
   `customOrder` → fails with descriptive message.
-- `customOrder` missing a type that is annotated on the method → fails.
-- `customOrder` containing a type that is not annotated on the method →
+- `customOrder` missing a type that is annotated on the source → fails.
+- `customOrder` containing a type that is not annotated on the source →
   fails.
 - `@InqShield(order = "BOGUS")` → fails.
+- **Class-level input:** at least one test uses a `Class<?>` (not a
+  `Method`) as the annotation source, verifying that the resolver works
+  uniformly across both `AnnotatedElement` subtypes.
+- No element annotations and no `@InqShield` → empty list (no
+  exception).
+- Defensive: null input → `IllegalArgumentException`.
 
 ### What this sub-step does NOT do
 
 - Check that referenced element names exist in the pipeline (sub-step 5).
-- Drive the method resolution itself — it assumes its input is already
-  the correct annotation-source method.
+- Drive the resolution of which annotated element to use — it assumes
+  its input has already been chosen by `InheritanceResolver`.
+- Look at class-level annotations when the input is a method (and vice
+  versa). The resolver reads annotations off the element it was given,
+  nothing more.
 
 ### Verification gates
 
@@ -557,7 +588,9 @@ Logic:
 - Every validation rule from ADR-036 §9 that is decidable at the
   `@InqShield` layer has at least one negative test pinning the error
   message.
-- Positive paths cover all three ordering modes.
+- Positive paths cover all three ordering modes (INQUDIUM default,
+  RESILIENCE4J, custom).
+- At least one test uses a `Class<?>` as the annotation source.
 
 ## Sub-step 5: `AnnotationEvaluator`
 
@@ -589,20 +622,21 @@ For each method on `serviceInterface`:
 
 1. Invoke `InheritanceResolver.resolve(interfaceMethod, implementationClass)`,
    yielding an `AnnotationSource`.
-2. Dispatch on the result:
+2. Dispatch on the result; in the non-`PassThrough` cases, the
+   relevant `AnnotatedElement` is either the method (for `MethodLevel`)
+   or the annotation source class (for `ClassLevelOnly`).
    - `PassThrough` → `MethodPlan.PassThrough`.
-   - `MethodLevel(method)` → read all Inqudium element annotations from
+   - `MethodLevel(method)` → the annotated element for further reads is
      `method`. The annotations are method-scope; class-level annotations
      on the implementation are ignored, per ADR-036 §6.
-   - `ClassLevelOnly(signatureMethod, annotationSourceClass)` → read
-     all Inqudium element annotations from `annotationSourceClass`.
+   - `ClassLevelOnly(signatureMethod, annotationSourceClass)` → the
+     annotated element for further reads is `annotationSourceClass`.
      The annotations are class-scope; the method itself has none.
-3. Once annotations are gathered (in the method-level or class-level
-   case), verify that every referenced element name exists in the
+3. Read all Inqudium element annotations from the chosen annotated
+   element. Verify that every referenced element name exists in the
    pipeline. Otherwise, throw `InqAnnotationConfigurationException`.
-4. Resolve the ordering via `OrderingResolver.resolveOrder` — invoked
-   on the same `AnnotatedElement` whose annotations are in play
-   (the method for `MethodLevel`, the class for `ClassLevelOnly`).
+4. Resolve the ordering via
+   `OrderingResolver.resolveOrder(annotatedElement)`.
 5. Project the ordered element types onto their corresponding element
    names from the annotations. Wrap in `MethodPlan.Decorated`.
 
