@@ -40,16 +40,22 @@ public interface AnnotationEvaluator {
      * method of {@code serviceInterface}, producing a per-method
      * {@link MethodPlan}.
      *
+     * @param <T>                  the service interface type; the
+     *                             implementation class must be a subtype
      * @param serviceInterface     the interface whose methods are evaluated;
      *                             must not be {@code null} and must be an
      *                             interface
      * @param implementationClass  the concrete implementation class; must
-     *                             not be {@code null}
+     *                             not be {@code null} and must implement
+     *                             {@code serviceInterface}
      * @return the per-method plans, keyed by interface method
      * @throws IllegalArgumentException             if either argument is
-     *                                              {@code null}, or if
+     *                                              {@code null}, if
      *                                              {@code serviceInterface}
-     *                                              is not an interface
+     *                                              is not an interface, or
+     *                                              if {@code implementationClass}
+     *                                              does not implement
+     *                                              {@code serviceInterface}
      * @throws InqAnnotationConfigurationException  if any annotation
      *                                              references an element
      *                                              name not present in the
@@ -57,5 +63,5 @@ public interface AnnotationEvaluator {
      *                                              other ADR-036 validation
      *                                              rule is violated
      */
-    EvaluationResult evaluate(Class<?> serviceInterface, Class<?> implementationClass);
+    <T> EvaluationResult evaluate(Class<T> serviceInterface, Class<? extends T> implementationClass);
 }

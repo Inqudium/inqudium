@@ -106,13 +106,15 @@ call is determined by the optional `@InqShield` annotation. The annotation has t
   public Order placeOrder(Cart cart) { ... }
   ```
 
-  The evaluator wraps the method in the listed types' order, outermost first. The custom-order array is reusable
-  across methods and across services — authors can define a constant `private static final InqElementType[]
-  MY_ORDER = ...` and reference it from `@InqShield(customOrder = MY_ORDER)`. The array may list element types
+  The evaluator wraps the method in the listed types' order, outermost first. The array may list element types
   that a given annotated source does not actually carry; the evaluator silently filters such entries out during
   projection. The only requirement is that every element type that *is* present on the source must appear in
-  `customOrder` — otherwise the resolved order would be ambiguous for that source. This makes a single shared
-  constant usable across methods that select different subsets of the listed element types.
+  `customOrder` — otherwise the resolved order would be ambiguous for that source. Authors who want a stable
+  composition order across many methods declare the same `customOrder = {...}` array literal at each site;
+  Java's annotation grammar does not allow a `static final InqElementType[]` reference as a `customOrder`
+  value, so the reuse is source-level rather than constant-reference-level. The relaxed validation lets
+  each site select its own subset of those element types without having to align the customOrder literal
+  per site.
 
 Without an explicit `@InqShield`, the `"INQUDIUM"` default applies. Authors do not need to write
 `@InqShield(order = "INQUDIUM")` for the canonical case.

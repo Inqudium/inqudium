@@ -33,7 +33,7 @@ import java.util.Locale;
  * application-specific elements that need to be inserted between standard
  * layers. The default order is a recommendation for the common case and can
  * be overridden per-provider or replaced entirely via
- * {@link eu.inqudium.aspect.pipeline.PipelineOrdering}.</p>
+ * {@link eu.inqudium.core.pipeline.PipelineOrdering}.</p>
  *
  * <p>Used as a discriminator in events (ADR-003), exceptions (ADR-009),
  * context propagation (ADR-011), and pipeline ordering (ADR-017).

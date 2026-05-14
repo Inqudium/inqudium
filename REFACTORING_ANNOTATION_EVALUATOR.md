@@ -582,3 +582,12 @@ When all sub-steps are approved:
 - [x] 3 — `MethodResolver`, `AnnotationSource`, and `InheritanceResolver` (2026-05-14, PR #55)
 - [x] 4 — `OrderingResolver` (2026-05-14, PR #56)
 - [x] 5 — `AnnotationEvaluator` (2026-05-14, PR #57)
+
+## Post-review cleanup
+
+- [x] End-to-end review cleanup (2026-05-14, PR #TBD)
+  — W2 (defensive check + generics), W3 (class-level `@InqShield` test),
+  W4 (annotation-list deduplication), B1 (customOrder superset semantics
+  + ADR §3 / `@InqShield.customOrder` Javadoc alignment with Java's
+  annotation grammar), B2/B3 (Javadoc), B4 (sibling `InqElementType`
+  Javadoc `@link` fix bundled into this PR), B5 (test-pipeline refactor).

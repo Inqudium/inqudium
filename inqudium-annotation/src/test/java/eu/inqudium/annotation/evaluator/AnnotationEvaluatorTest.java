@@ -23,26 +23,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * full ADR-036 algorithm: per-method dispatch via the inheritance walk,
  * annotation-to-name projection, pipeline-existence validation, and the
  * propagation of validation failures from the underlying resolvers.
+ *
+ * <p>Each test builds its own minimal pipeline containing exactly the
+ * elements the test fixture requires. Per ADR-036 §4 a real pipeline
+ * carries at most one element per element type, so the tests follow that
+ * constraint: no test pipeline contains two elements of the same
+ * {@link InqElementType}.</p>
  */
 class AnnotationEvaluatorTest {
-
-    /**
-     * The pipeline used in every positive test. It contains stub elements
-     * for every name that any fixture annotation references; this keeps
-     * the pipeline-existence check away from accidental failures in tests
-     * that focus on other behaviour.
-     */
-    private static final InqPipeline FULL_PIPELINE = pipelineWithElements(
-            stubElement("cb", InqElementType.CIRCUIT_BREAKER),
-            stubElement("rt", InqElementType.RETRY),
-            stubElement("bh", InqElementType.BULKHEAD),
-            stubElement("tl", InqElementType.TIME_LIMITER),
-            stubElement("classCb", InqElementType.CIRCUIT_BREAKER),
-            stubElement("classBh", InqElementType.BULKHEAD),
-            stubElement("methodRt", InqElementType.RETRY),
-            stubElement("bridge", InqElementType.RETRY));
-
-    private final AnnotationEvaluator evaluator = AnnotationEvaluator.forPipeline(FULL_PIPELINE);
 
     // ---------------------------------------------------------------------
     // MethodLevel plans
@@ -54,6 +42,7 @@ class AnnotationEvaluatorTest {
         @Test
         void should_produce_decorated_plan_with_single_element_when_method_carries_one_annotation() {
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(stubElement("rt", InqElementType.RETRY));
             Method interfaceMethod = declared(SingleAnnotationApi.class, "perform", String.class);
 
             // When
@@ -82,6 +71,9 @@ class AnnotationEvaluatorTest {
             //   directly visible to every user.
 
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(
+                    stubElement("cb", InqElementType.CIRCUIT_BREAKER),
+                    stubElement("rt", InqElementType.RETRY));
             Method interfaceMethod = declared(MultipleAnnotationApi.class, "process", int.class);
 
             // When
@@ -110,6 +102,7 @@ class AnnotationEvaluatorTest {
             //   future lookup keyed by the interface's reflective method handle.
 
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(stubElement("bridge", InqElementType.RETRY));
             Method interfaceMethod = declared(GenericApi.class, "accept", Object.class);
 
             // When
@@ -133,6 +126,8 @@ class AnnotationEvaluatorTest {
         void should_use_class_level_annotations_when_method_has_no_method_level_annotation() {
             // Given — ClassLevelImpl carries @InqCircuitBreaker("classCb") at class level; the
             // method itself has none.
+            AnnotationEvaluator evaluator = evaluatorWith(
+                    stubElement("classCb", InqElementType.CIRCUIT_BREAKER));
             Method interfaceMethod = declared(SingleAnnotationApi.class, "perform", String.class);
 
             // When
@@ -168,6 +163,7 @@ class AnnotationEvaluatorTest {
             //   from regressing in any future change to the inheritance walk.
 
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(stubElement("methodRt", InqElementType.RETRY));
             Method interfaceMethod = declared(SingleAnnotationApi.class, "perform", String.class);
 
             // When
@@ -177,6 +173,44 @@ class AnnotationEvaluatorTest {
             // Then
             assertThat(result.plans().get(interfaceMethod))
                     .isEqualTo(new MethodPlan.Decorated(List.of("methodRt")));
+        }
+
+        @Test
+        void should_ignore_class_level_shield_when_method_carries_its_own_resilience_annotations() {
+            // What is to be tested?
+            //   ClassLevelShieldWithMethodLevelAnnotationsImpl carries class-level
+            //   @InqShield(order = "RESILIENCE4J"); the impl method carries method-level @InqRetry
+            //   and @InqCircuitBreaker but no method-level @InqShield. Per ADR-036 §6
+            //   (post-PR #58 adjustment), @InqShield is read from the same AnnotatedElement as the
+            //   element annotations whose ordering it controls — once the impl method itself
+            //   carries any method-level resilience annotation, the class-level @InqShield is
+            //   silently ignored, and the absent method-level @InqShield falls back to "INQUDIUM".
+            // How will the test case be deemed successful and why?
+            //   The Decorated list is [cb, rt] (INQUDIUM order — CIRCUIT_BREAKER=500 outermost,
+            //   RETRY=600 innermost). The RESILIENCE4J order on the class would yield [rt, cb];
+            //   asserting on the INQUDIUM sequence rules out a regression that reads the class-level
+            //   shield from the method-level path.
+            // Why is it important to test this test case?
+            //   This is the implementation's actual behaviour, and ADR-036 §6 now spells out that
+            //   @InqShield falls under the same method-overrides-class rule as the element
+            //   annotations. Pinning it end-to-end keeps the documented and implemented semantics in
+            //   lockstep, so a future change that read class-level @InqShield from the method path
+            //   would surface here as an order mismatch rather than silently changing user-visible
+            //   pipeline composition.
+
+            // Given
+            AnnotationEvaluator evaluator = evaluatorWith(
+                    stubElement("cb", InqElementType.CIRCUIT_BREAKER),
+                    stubElement("rt", InqElementType.RETRY));
+            Method interfaceMethod = declared(ShieldOverrideApi.class, "perform", String.class);
+
+            // When
+            EvaluationResult result = evaluator.evaluate(
+                    ShieldOverrideApi.class, ClassLevelShieldWithMethodLevelAnnotationsImpl.class);
+
+            // Then
+            assertThat(result.plans().get(interfaceMethod))
+                    .isEqualTo(new MethodPlan.Decorated(List.of("cb", "rt")));
         }
     }
 
@@ -190,6 +224,7 @@ class AnnotationEvaluatorTest {
         @Test
         void should_produce_pass_through_for_unoverridden_default_interface_method() {
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith();
             Method interfaceMethod = declared(DefaultMethodApi.class, "greet");
 
             // When
@@ -204,6 +239,7 @@ class AnnotationEvaluatorTest {
         @Test
         void should_produce_pass_through_when_no_resilience_annotation_exists_anywhere() {
             // Given — UnannotatedImpl has neither method-level nor class-level resilience annotations
+            AnnotationEvaluator evaluator = evaluatorWith();
             Method interfaceMethod = declared(SingleAnnotationApi.class, "perform", String.class);
 
             // When
@@ -238,6 +274,9 @@ class AnnotationEvaluatorTest {
             //   single-method test.
 
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(
+                    stubElement("methodRt", InqElementType.RETRY),
+                    stubElement("classCb", InqElementType.CIRCUIT_BREAKER));
             Method decorated = declared(MixedApi.class, "decorated", String.class);
             Method passThrough = declared(MixedApi.class, "passThrough");
             Method classLevel = declared(MixedApi.class, "classLevel", int.class);
@@ -280,7 +319,8 @@ class AnnotationEvaluatorTest {
             //   annotation that references a name that has not been registered. A vague exception
             //   message would force users to grep through reflection output to find the offender.
 
-            // Given
+            // Given — pipeline deliberately does not contain "nonexistent"
+            AnnotationEvaluator evaluator = evaluatorWith();
             Method interfaceMethod = declared(SingleAnnotationApi.class, "perform", String.class);
 
             // When / Then
@@ -308,7 +348,11 @@ class AnnotationEvaluatorTest {
             //   not swallowing or accumulating downstream errors. A bug that wrapped the cause in a
             //   different exception type would make catch blocks at higher layers miss it.
 
-            // Given / When / Then
+            // Given — pipeline contains "rt" so evaluation gets past the pipeline-existence check
+            // and reaches the @InqShield validation in the ordering resolver
+            AnnotationEvaluator evaluator = evaluatorWith(stubElement("rt", InqElementType.RETRY));
+
+            // When / Then
             assertThatThrownBy(() -> evaluator.evaluate(
                     SingleAnnotationApi.class, ConflictingShieldImpl.class))
                     .isInstanceOf(InqAnnotationConfigurationException.class);
@@ -332,6 +376,9 @@ class AnnotationEvaluatorTest {
 
         @Test
         void should_reject_null_service_interface_with_illegal_argument_exception() {
+            // Given
+            AnnotationEvaluator evaluator = evaluatorWith();
+
             // When / Then
             assertThatThrownBy(() -> evaluator.evaluate(null, SingleAnnotationImpl.class))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -340,6 +387,9 @@ class AnnotationEvaluatorTest {
 
         @Test
         void should_reject_null_implementation_class_with_illegal_argument_exception() {
+            // Given
+            AnnotationEvaluator evaluator = evaluatorWith();
+
             // When / Then
             assertThatThrownBy(() -> evaluator.evaluate(SingleAnnotationApi.class, null))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -362,11 +412,47 @@ class AnnotationEvaluatorTest {
             //   methods plus the impl's own — yielding a confusing, half-correct EvaluationResult
             //   instead of an immediate failure.
 
+            // Given
+            AnnotationEvaluator evaluator = evaluatorWith();
+
             // When / Then
             assertThatThrownBy(() -> evaluator.evaluate(
                     SingleAnnotationImpl.class, SingleAnnotationImpl.class))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(SingleAnnotationImpl.class.getName());
+        }
+
+        @Test
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        void should_reject_implementation_that_does_not_implement_the_service_interface_with_illegal_argument_exception() {
+            // What is to be tested?
+            //   The generics on evaluate's signature catch the impl-does-not-implement-iface mistake
+            //   at compile time, but raw-type or unchecked-cast call sites would bypass that check
+            //   silently. The runtime guard runs after the existing null/non-interface checks and
+            //   must reject the configuration with IllegalArgumentException whose message names
+            //   both the offending impl class and the unrelated interface.
+            // How will the test case be deemed successful and why?
+            //   IllegalArgumentException is thrown — not InqAnnotationConfigurationException, which
+            //   signals annotation problems rather than API misuse — and the message contains the
+            //   names of both classes so the programmer can locate the mismatched call site.
+            // Why is it important to test this test case?
+            //   Without this guard, getMethods() on the (unrelated) interface would still return its
+            //   methods, then annotation lookup on the wrong impl class would produce a half-correct
+            //   plan map keyed by methods the impl cannot answer. That is the worst kind of bug —
+            //   silently wrong, downstream-failing. The defensive check upgrades it to a clean,
+            //   immediate failure at construction time.
+
+            // Given — raw types intentionally bypass the compile-time generic check so that the
+            // runtime guard is exercised; this models a caller that did the same via unchecked casts.
+            AnnotationEvaluator evaluator = evaluatorWith();
+            Class iface = MultipleAnnotationApi.class;
+            Class impl = SingleAnnotationImpl.class;
+
+            // When / Then
+            assertThatThrownBy(() -> evaluator.evaluate(iface, impl))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(SingleAnnotationImpl.class.getName())
+                    .hasMessageContaining(MultipleAnnotationApi.class.getName());
         }
     }
 
@@ -380,6 +466,7 @@ class AnnotationEvaluatorTest {
         @Test
         void should_return_an_unmodifiable_plan_map_so_callers_cannot_mutate_evaluation_results() {
             // Given
+            AnnotationEvaluator evaluator = evaluatorWith(stubElement("rt", InqElementType.RETRY));
             EvaluationResult result = evaluator.evaluate(
                     SingleAnnotationApi.class, SingleAnnotationImpl.class);
 
@@ -405,6 +492,10 @@ class AnnotationEvaluatorTest {
     // =====================================================================
     // Pipeline scaffolding — local stub element implementation, no public utility
     // =====================================================================
+
+    private static AnnotationEvaluator evaluatorWith(InqElement... elements) {
+        return AnnotationEvaluator.forPipeline(pipelineWithElements(elements));
+    }
 
     private static InqPipeline pipelineWithElements(InqElement... elements) {
         InqPipeline.Builder builder = InqPipeline.builder();
@@ -462,6 +553,10 @@ class AnnotationEvaluatorTest {
         int classLevel(int input);
     }
 
+    interface ShieldOverrideApi {
+        void perform(String input);
+    }
+
     // =====================================================================
     // Fixture implementations
     // =====================================================================
@@ -497,6 +592,21 @@ class AnnotationEvaluatorTest {
         @InqRetry("methodRt")
         public void perform(String input) {
             // method-level annotation must shadow class-level @InqBulkhead entirely
+        }
+    }
+
+    @InqShield(order = "RESILIENCE4J")
+    static class ClassLevelShieldWithMethodLevelAnnotationsImpl implements ShieldOverrideApi {
+        @Override
+        @InqRetry("rt")
+        @InqCircuitBreaker("cb")
+        public void perform(String input) {
+            // Class-level @InqShield(order = "RESILIENCE4J") is silently ignored because the method
+            // carries method-level resilience annotations of its own. Per ADR-036 §6 the resolver
+            // reads @InqShield from the same AnnotatedElement as the element annotations whose
+            // ordering it controls — here, the method, which carries none. The result is the
+            // INQUDIUM default order (CB outermost, RT innermost), not the RESILIENCE4J order
+            // (RT outermost, CB innermost) that the class-level shield would imply.
         }
     }
 
