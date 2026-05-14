@@ -492,7 +492,7 @@ When all sub-steps are approved:
 ## Completion log
 
 - [x] 1 — `@InqShield` aligned with ADR-036 §3 (2026-05-14, PR #53)
-- [ ] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException`
+- [x] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException` (2026-05-14, PR #54)
 - [ ] 3 — `MethodResolver` and `InheritanceResolver`
 - [ ] 4 — `OrderingResolver`
 - [ ] 5 — `AnnotationEvaluator`
