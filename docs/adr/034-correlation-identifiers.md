@@ -2,7 +2,10 @@
 
 **Status:** Proposed  
 **Date:** 2026-05-05  
-**Deciders:** Core team
+**Deciders:** Core team  
+**Related:** ADR-037 (module topology, Spring AOP as adapter over proxy),
+ADR-039 (uniform stack introspection, which surfaces these identifiers in the
+introspection API).
 
 ## Context
 
@@ -57,21 +60,27 @@ contention, the `stackId` identifies a coarse unit; where contention concerns fo
 
 The carrier of `stackId` and `callId` counter per integration technology:
 
-| Technology               | Carrier of `stackId` and `callId` counter |
-|--------------------------|-------------------------------------------|
-| Function-based decorator | Wrapper instance                          |
-| Dynamic proxy            | Proxy instance                            |
-| AspectJ                  | Terminal instance                         |
-| Spring AOP               | Per-method cache entry within the aspect  |
+| Technology               | Carrier of `stackId` and `callId` counter                                |
+|--------------------------|--------------------------------------------------------------------------|
+| Function-based decorator | Wrapper instance                                                         |
+| Dynamic proxy            | Proxy instance, shared across all intercepted methods                    |
+| AspectJ                  | Target instance, shared across all advised methods                       |
+| Spring AOP               | Per-bean proxy instance held inside the aspect (per ADR-037)             |
 
-The Spring AOP case is finer-grained than the others because the Spring aspect itself is typically a singleton bean.
-Holding the counter on the aspect would force all annotated methods through one counter, violating the
-contention-avoidance goal. The per-method cache entry — which exists to memoise the resolved pipeline anyway — is the
-natural carrier on that side.
+The proxy and AspectJ carriers are the natural runtime objects that hold the resilience state. A proxy with N
+intercepted methods produces one `stackId` shared across them; an AspectJ-woven target with M advised methods
+produces one `stackId` shared across them. Operators who need per-method correlation should rely on the method
+name in the log output, not on the `stackId`.
 
-The `stackId` does not carry per-method semantics. Multiple methods sharing one carrier (e.g. four methods on one
-proxy) share one `stackId`. Operators who need per-method correlation should rely on the method name in the log
-output, not on the `stackId`.
+The Spring AOP carrier reflects the architecture established in ADR-037: Spring AOP is realised as a thin
+adapter over `inqudium-proxy` rather than as an independent dispatch implementation. The aspect bean holds
+one JDK proxy per advised Spring bean, and that proxy carries the `stackId` and `callId` counter like any
+proxy. From the operator's perspective, the `stackId` identifies the Spring bean being invoked. Because Spring
+aspect beans are typically singletons, an adapter may opt not to synthesise a per-call identifier; the
+`stackId` then identifies the bean and not the call site, which is acceptable when the bean granularity is
+sufficient for correlation purposes.
+
+The `stackId` does not carry per-method semantics. Multiple methods sharing one carrier share one `stackId`.
 
 ### Notation
 
@@ -116,6 +125,10 @@ but is not enforced.
 - The relation to `InqPipeline` (ADR-002): a single `InqPipeline` composition can give rise to many resilience-stacks
   if it is applied at multiple integration points. Each stack has its own `stackId`. The pipeline itself does not
   carry a `stackId`.
+- The relation to ADR-039 (uniform stack introspection): ADR-039 surfaces the `stackId` of any resilience-stack
+  through the `InqIntrospector` API. The carrier semantics defined here govern what `stackId` value a given
+  resilience-stack will report. The two ADRs are consistent: ADR-034 specifies the carriers, ADR-039 specifies
+  how those carriers are surfaced for diagnostic purposes.
 
 ## History
 
