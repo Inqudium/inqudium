@@ -32,7 +32,9 @@ on each other.
 
 ### 1. Application model
 
-The library exposes proxy construction as a method on `InqPipeline`:
+The library exposes proxy construction through the `InqPipeline` interface. Among `InqPipeline`'s `protect`
+overloads (specified in ADR-037), the proxy integration is selected by the overload that takes a service
+interface class and a real target:
 
 ```java
 InqPipeline pipeline = InqPipeline.builder()
@@ -43,18 +45,18 @@ InqPipeline pipeline = InqPipeline.builder()
 OrderService service = pipeline.protect(OrderService.class, new DefaultOrderService(runtime));
 ```
 
-The `protect` call returns a proxy that implements the `OrderService` interface. The proxy is the object the
-application uses; the original `DefaultOrderService` implementation is held internally as the *real target* and is
-invoked at the bottom of the resilience-stack for each protected call.
+The `protect(Class<T>, T)` call returns a proxy that implements the `OrderService` interface. The proxy is the
+object the application uses; the original `DefaultOrderService` implementation is held internally as the *real
+target* and is invoked at the bottom of the resilience-stack for each protected call.
 
-The pipeline is the *available* set of resilience elements. Which elements actually wrap a specific method, and in
-what order, is determined by annotations on the implementation. The annotation evaluation follows ADR-036.
+The pipeline is the *available* set of resilience elements. Which elements actually wrap a specific method, and
+in what order, is determined by annotations on the implementation. The annotation evaluation follows ADR-036.
 
-There is no separate factory class in the user-facing API. The choice between synchronous, asynchronous, or hybrid
-dispatch is determined internally by the library based on the method signatures it encounters (per section 6) and
-on the paradigm modules present on the user's classpath (per ADR-037). Users who need only synchronous dispatch
-declare a dependency on `inqudium-pipeline`; users who need asynchronous dispatch additionally declare
-`inqudium-imperative`. The `pipeline.protect(...)` API is identical in both cases.
+There is no separate factory class in the user-facing API. The integration is selected by which `protect`
+overload the user invokes — functional decoration via `protect(Supplier<T>)`, proxy via `protect(Class<T>, T)`,
+and future overloads for other integrations. ADR-037 governs the module-level realisation: proxy support
+requires `inqudium-proxy` on the classpath, async dispatch within the proxy requires `inqudium-imperative`,
+and a missing module raises a descriptive `IllegalStateException` at the point of `protect(...)` invocation.
 
 ### 2. JDK Dynamic Proxy as the proxy mechanism
 

@@ -1,4 +1,4 @@
-# ADR-037: Module topology and optional integration modules
+# ADR-037: Module topology and integration dispatch
 
 **Status:** Proposed  
 **Date:** 2026-05-05  
@@ -6,10 +6,10 @@
 
 ## Context
 
-The library applies resilience compositions through several integration technologies (proxy, function-based,
-AspectJ, Spring AOP) and supports several dispatch paradigms (synchronous, asynchronous, with reactive types as a
-likely future addition). Each integration and each paradigm comes with its own classes, dependencies, and
-runtime requirements.
+The library applies resilience compositions through several integration technologies — functional decoration,
+JDK dynamic proxies, AspectJ weaving, Spring AOP — and supports several dispatch paradigms within those
+technologies (synchronous, asynchronous, with reactive types as a likely future addition). Each integration and
+each paradigm comes with its own classes, dependencies, and runtime requirements.
 
 A naïve approach would put everything into a single library artefact, forcing every user to pull in transitive
 dependencies they may not need. A user with synchronous-only services would still receive `CompletionStage`
@@ -17,82 +17,211 @@ machinery; a user without Reactor on their classpath would still see Reactor cla
 
 This ADR specifies the module topology and the optional-dependency mechanism the library uses to keep each
 user's footprint minimal — only the modules actually needed for the chosen integration and paradigms end up on
-the classpath.
+the classpath. It also specifies how the user-facing `InqPipeline` API stays uniform across all integrations
+while delegating to the appropriate integration-specific dispatch.
+
+### Architectural principles
+
+Three principles drive the topology:
+
+- **`inqudium-core` does not depend on integration modules.** The core stays at the bottom of the dependency
+  graph. A reverse dependency from core to proxy or aspect would create a fragile circular tendency.
+- **`InqPipeline` is the uniform user-facing API.** Regardless of integration technology, users build a
+  pipeline and call `pipeline.protect(...)` on it. The choice of integration is encoded in the method
+  overload selected by the call's argument types, not in a separate factory class.
+- **`inqudium-pipeline` is a thin interface module without dispatch responsibilities.** It defines the
+  `InqPipeline` interface, its builder, and the per-integration detection classes — nothing more. The actual
+  dispatch logic for any integration lives in that integration's own module.
 
 ## Decision
 
 ### 1. Module topology
 
-The library is structured into a small core plus paradigm-specific modules. The structure relevant to the proxy
-integration (ADR-035) and likely future paradigms is:
+The library is structured into a small core, a thin pipeline interface module, and a set of integration
+modules. The structure is:
 
-| Module                | Role                                                                                                                                    |
-|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `inqudium-core`       | Shared interfaces (`LayerAction`, `InqDecorator`, `Wrapper`), correlation IDs (`PipelineIds`), and the resilience-element infrastructure. |
-| `inqudium-pipeline`   | `InqPipeline` itself, the `protect(...)` API, the synchronous dispatch logic, and the dispatch-mode recognition for all known paradigms. |
-| `inqudium-imperative` | Asynchronous dispatch — `AsyncLayerAction`, `InqAsyncDecorator`, `InternalAsyncExecutor`, the async dispatch logic.                      |
-| (future) `inqudium-reactor`  | Reactor-specific dispatch — recognition of `Mono`/`Flux` return types, the reactive subscription chain.                                |
+| Module                | Role                                                                                                                                                  | Depends on                                          |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|
+| `inqudium-core`       | Shared interfaces (`LayerAction`, `InqDecorator`, `Wrapper`), correlation IDs (`PipelineIds`), the resilience-element infrastructure, *functional decoration* and *synchronous dispatch* | (nothing else in the library)                       |
+| `inqudium-pipeline`   | The `InqPipeline` interface with default methods routing to integrations, the pipeline builder, per-integration detection classes                     | `inqudium-core`; optional deps to all integrations  |
+| `inqudium-proxy`      | JDK dynamic proxy infrastructure, annotation evaluator (per ADR-036), proxy dispatcher                                                                | `inqudium-core`; optional dep to `inqudium-imperative` |
+| `inqudium-imperative` | Asynchronous dispatch — `AsyncLayerAction`, `InqAsyncDecorator`, `InternalAsyncExecutor`, async dispatcher                                            | `inqudium-core`                                     |
+| (future) `inqudium-aspect`   | AspectJ integration — weaver setup, advice classes                                                                                              | `inqudium-core`                                     |
+| (future) `inqudium-spring`   | Spring AOP integration as a thin adapter over `inqudium-proxy` (see section 7)                                                                  | `inqudium-core`, `inqudium-proxy`, `inqudium-pipeline` |
+| (future) `inqudium-reactor`  | Reactor-specific dispatch — recognition of `Mono`/`Flux` return types, reactive subscription chain                                              | `inqudium-core`                                     |
 
-Each paradigm-specific module is a standalone artefact. A user with synchronous-only services depends on
-`inqudium-pipeline` (and transitively `inqudium-core`). A user with hybrid sync/async services additionally
-declares `inqudium-imperative`. A future user with Reactor services additionally declares `inqudium-reactor`.
+Each integration module is a standalone artefact. A user with synchronous-only functional decoration depends
+only on `inqudium-core`. A user with proxy-based resilience additionally depends on `inqudium-pipeline` and
+`inqudium-proxy`. A user with hybrid sync/async proxies adds `inqudium-imperative` on top.
 
-### 2. Optional dependencies for paradigm modules
+### 2. Optional dependencies
 
-`inqudium-pipeline` declares each paradigm-specific module as an *optional* dependency:
+`inqudium-pipeline` declares each integration module as an *optional* dependency:
 
 - Maven: `<optional>true</optional>` on the dependency declaration.
 - Gradle: `compileOnly` configuration.
 
 The optional declaration has two effects:
 
-- The paradigm module is on the compile classpath of `inqudium-pipeline`. The pipeline can reference paradigm
-  classes (such as `CompletionStage` for async or `Mono` for Reactor) at compile time without further
-  configuration.
-- The paradigm module is *not* transitively propagated to consumers of `inqudium-pipeline`. A user who depends
-  on `inqudium-pipeline` does not automatically receive `inqudium-imperative` or `inqudium-reactor`.
+- The integration module is on the compile classpath of `inqudium-pipeline`. The pipeline interface's default
+  methods can reference integration-specific dispatcher classes at compile time.
+- The integration module is *not* transitively propagated to consumers of `inqudium-pipeline`. A user who
+  depends on `inqudium-pipeline` does not automatically receive `inqudium-proxy` or other integration modules.
 
-Users who need a paradigm declare its module explicitly in their own build configuration. This makes the
+Users declare the integration modules they need explicitly in their own build configuration. This makes the
 classpath footprint a deliberate user choice, not a transitive byproduct.
 
-### 3. Dispatch-mode recognition lives in `inqudium-pipeline`
+The same pattern applies inside integration modules. `inqudium-proxy` declares `inqudium-imperative` as
+optional, so that proxy users who do not need async dispatch are not forced to include async machinery.
 
-`inqudium-pipeline` knows about every paradigm. It contains the recognition logic — the predicates that examine
-a `Method` and decide which paradigm applies. The form of the predicate depends on whether the paradigm's
-marker type is part of the JDK or comes from an external module:
+### 3. `InqPipeline` as the uniform user-facing API
+
+`InqPipeline` is declared as an interface in `inqudium-pipeline`. It carries one method overload per
+integration; the overload an application invokes selects the integration:
 
 ```java
-// In inqudium-pipeline:
+public interface InqPipeline {
 
+    List<InqElement> elements();
+
+    // Functional decoration — synchronous, always available.
+    default <T> Supplier<T> protect(Supplier<T> target) {
+        return FunctionalDispatcher.protect(this, target);
+    }
+
+    // Proxy-based — requires inqudium-proxy on the classpath.
+    default <T> T protect(Class<T> serviceInterface, T target) {
+        if (!DetectionProxy.isPresent()) {
+            throw new IllegalStateException(
+                "Method protect(Class<T>, T) requires inqudium-proxy on the classpath. " +
+                "Add the dependency to your build configuration.");
+        }
+        return ProxyDispatcher.protect(this, serviceInterface, target);
+    }
+
+    // AspectJ-based — requires inqudium-aspect on the classpath.
+    // default <T> T protect(Object aspect, Object target) { ... }
+}
+```
+
+The overload is selected at compile time from the argument types: a `Supplier<T>` routes to functional
+decoration; a `Class<T>` paired with a target routes to proxy; future overloads route to other integrations.
+The user does not name an integration explicitly; the call site's argument types do.
+
+This pattern preserves the uniform API (`pipeline.protect(...)` regardless of context) while keeping
+`inqudium-pipeline` free of dispatch logic — each default method delegates to a dispatcher class in the
+relevant integration module. The body of each default method is small: a presence check plus a delegation
+call.
+
+### 4. Detection classes in `inqudium-pipeline`
+
+For each integration module, `inqudium-pipeline` carries a detection class. The detection class exposes:
+
+- `isPresent()` — is the integration module's class on the runtime classpath?
+
+Detection classes are small and live alongside `InqPipeline`. Each provides the presence check that the
+corresponding default method invokes. There is no `canHandle(Method)` predicate at the integration level —
+that is a paradigm-level concern (sync vs. async vs. Reactor) handled inside the integration module, not at
+the `InqPipeline` level.
+
+A typical detection class:
+
+```java
+public final class DetectionProxy {
+
+    private static final boolean PRESENT = checkPresence();
+
+    public static boolean isPresent() {
+        return PRESENT;
+    }
+
+    private static boolean checkPresence() {
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        if (loader == null) {
+            loader = DetectionProxy.class.getClassLoader();
+        }
+        try {
+            Class.forName(
+                "eu.inqudium.proxy.ProxyDispatcher",
+                false,
+                loader);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+}
+```
+
+The presence check runs once, when the detection class is first loaded. The result is cached. Subsequent
+invocations return the cached value.
+
+`Class.forName(name, false, loader)` is the form the library uses: it locates the class by name without
+triggering its static initialisers.
+
+The classloader chosen for the lookup is the *context classloader* of the current thread, falling back to the
+classloader of the detection class itself if the context classloader is `null`. This is the established
+pattern for libraries that may run in container environments (Spring Boot fat JARs, servlet containers, OSGi)
+where the context classloader sees the user's optional dependencies, but the classloader of a library class
+loaded by a parent loader may not. Implementations may extend this with additional defensive fallback paths
+(e.g. trying both classloaders explicitly) without changing the spec; the spec mandates only that the context
+classloader is consulted first and that a `null` context classloader does not cause a failure.
+
+### 5. Paradigm-level dispatch inside integration modules
+
+Within an integration module, paradigm selection (sync vs. async vs. Reactor) is the integration module's
+own concern. The proxy module is the canonical example.
+
+`inqudium-proxy` knows about its supported paradigms (sync, async) and contains paradigm-specific dispatch
+classes (`SyncDispatcher`, `AsyncDispatcher`). When a proxy is constructed, the dispatcher in `inqudium-proxy`
+classifies each method by its return type and routes to the appropriate per-paradigm dispatcher:
+
+```java
+// In inqudium-proxy, during proxy construction:
+public Object dispatch(Method method, Object[] args) {
+    if (isAsyncMethod(method)) {
+        if (!DetectionAsync.isPresent()) {
+            throw new IllegalStateException(
+                "Method " + method + " requires async dispatch (return type " +
+                method.getReturnType().getName() + "), " +
+                "but inqudium-imperative is not on the classpath.");
+        }
+        return AsyncDispatcher.dispatch(method, args);
+    }
+    // Sync default — always available, no detection needed.
+    return SyncDispatcher.dispatch(method, args);
+}
+```
+
+The detection of paradigms inside `inqudium-proxy` follows the same pattern as the detection of integrations
+inside `inqudium-pipeline`: a detection class with `isPresent()`, a hard-wired if-else chain, no shared
+collection of dispatchers.
+
+#### Class-literal references and the type-reference trap
+
+Detection-related code must avoid class-literal references to types from optional modules. A direct reference
+such as `Mono.class` in `DetectionReactor` would force the JVM to resolve `reactor.core.publisher.Mono` when
+`DetectionReactor` itself is loaded — before the recognition logic ever runs — raising
+`NoClassDefFoundError` if Reactor is absent.
+
+JDK types are exempt from this concern because they are guaranteed to be present at runtime:
+
+```java
 // JDK type — direct class-literal reference is safe.
 private static boolean isAsyncMethod(Method method) {
     return CompletionStage.class.isAssignableFrom(method.getReturnType());
 }
+```
 
-// (future) External type — string-based comparison required.
+External types require string-based comparison, which the library provides through a helper that walks the
+type hierarchy without class-literal references:
+
+```java
+// External type — string-based comparison required.
 private static boolean isReactorMonoMethod(Method method) {
     return isAssignableTo(method.getReturnType(), "reactor.core.publisher.Mono");
 }
-```
 
-The asymmetry is intentional and required by the JVM's class-loading semantics. A direct class-literal
-reference such as `Mono.class` forces the JVM to resolve `reactor.core.publisher.Mono` when the enclosing
-class (e.g. `DetectionReactor`) is loaded — *before* any of its methods is invoked. If Reactor is absent from
-the runtime classpath, the JVM raises `NoClassDefFoundError` at the load of `DetectionReactor` itself, never
-reaching the recognition logic that would otherwise return `false`. The lazy-loading guarantees discussed in
-section 4 protect *method bodies* that are not executed; they do not protect *class-literal references* inside
-a class that is loaded.
-
-JDK types do not need this protection because they are always present at runtime. `CompletionStage` is a
-member of `java.util.concurrent` and is guaranteed available; a direct class-literal reference to it cannot
-fail. The library uses the more robust `isAssignableFrom` form for JDK types because it correctly handles
-subtypes — a method returning a subtype of `CompletionStage` is recognised as async.
-
-For external types, the library provides a helper that walks the type hierarchy by name, avoiding any
-class-literal references:
-
-```java
-// Helper in inqudium-pipeline, used by recognition predicates that target external types.
 public static boolean isAssignableTo(Class<?> type, String targetTypeName) {
     if (type == null || type == Object.class) {
         return false;
@@ -100,11 +229,9 @@ public static boolean isAssignableTo(Class<?> type, String targetTypeName) {
     if (targetTypeName.equals(type.getName())) {
         return true;
     }
-    // Walk superclasses.
     if (isAssignableTo(type.getSuperclass(), targetTypeName)) {
         return true;
     }
-    // Walk implemented interfaces.
     for (Class<?> iface : type.getInterfaces()) {
         if (isAssignableTo(iface, targetTypeName)) {
             return true;
@@ -116,20 +243,11 @@ public static boolean isAssignableTo(Class<?> type, String targetTypeName) {
 
 This helper preserves the semantic equivalent of `isAssignableFrom` (subtype recognition) while using only
 strings to identify the target type. Because the helper accesses `Class` objects already loaded into the JVM
-(via `getSuperclass`/`getInterfaces` on the method's actual return type), it does not introduce any new
-class-literal references. If Reactor is absent, `Mono` is never loaded, the helper never encounters it in the
-hierarchy walk, and the recognition correctly returns `false`.
+(via the method's actual return type, which is necessarily loaded if the user invokes the method), it does
+not introduce any new class-literal references. If Reactor is absent, `Mono` is never loaded, the helper
+never encounters it in the hierarchy walk, and the recognition correctly returns `false`.
 
-The recognition logic is small, pure, and either JDK-only or string-based in its references. It does not
-invoke paradigm-specific behaviour itself; it merely identifies which paradigm a method belongs to. The
-actual paradigm-specific dispatch is delegated to the paradigm module.
-
-### 4. Separated dispatch paths per paradigm
-
-The dispatch paths for different paradigms must be separated in the code, never mixed in a shared structure.
-This is the architectural condition that makes optional dependencies work without surprise failures.
-
-#### Why separation works: lazy class loading and lazy verification
+### 6. Lazy class loading: why separation works
 
 The JVM combines two mechanisms that, together, make the optional-dependency pattern reliable:
 
@@ -140,34 +258,20 @@ The JVM combines two mechanisms that, together, make the optional-dependency pat
   load time. When a class is loaded, the JVM defers verification of its referenced types until the first
   branch that needs them is executed.
 
-The combination means that a method like:
+A concrete trace. Suppose `pipeline.protect(myClass, myTarget)` is called with `inqudium-proxy` absent:
 
-```java
-public Object dispatch(Method method, Object[] args) {
-    if (DetectionAsync.canHandle(method)) {
-        return AsyncDispatcher.dispatch(method, args);   // refers to async classes
-    }
-    return SyncDispatcher.dispatch(method, args);        // refers to sync classes only
-}
-```
+1. The JVM enters the default method `protect(Class<T>, T)` on `InqPipeline`. The interface is already
+   loaded; no proxy-related loading has occurred yet.
+2. The JVM evaluates `DetectionProxy.isPresent()`. `DetectionProxy` is in `inqudium-pipeline` (always
+   present); it is loaded if not already loaded. Its `isPresent` returns `false` because `ProxyDispatcher`
+   is not on the classpath.
+3. The `if`-branch fires the `IllegalStateException`. The reference to `ProxyDispatcher.protect(...)` is
+   *never resolved*; the JVM does not attempt to load `ProxyDispatcher` or any class it transitively
+   references.
 
-works correctly even when the async classes are absent from the runtime classpath, *provided* the async branch
-is never entered. The bytecode references to async classes do not trigger loading; only the actual execution of
-`AsyncDispatcher.dispatch(...)` would.
-
-A concrete trace. Suppose `dispatch` is invoked with a synchronous method (e.g. `String findById(String id)`):
-
-1. The JVM enters `dispatch`. The method is already loaded; no async-related loading has occurred.
-2. The JVM evaluates `DetectionAsync.canHandle(method)`. `DetectionAsync` is in `inqudium-pipeline` (always
-   present); it is loaded if not already loaded. Its `canHandle` returns `false` for the sync method.
-3. The `if`-branch is skipped. The reference to `AsyncDispatcher.dispatch(...)` is *never resolved*; the JVM
-   does not attempt to load `AsyncDispatcher` or any class it transitively references.
-4. The JVM proceeds to `SyncDispatcher.dispatch(...)`, loads `SyncDispatcher` (in `inqudium-pipeline`), and
-   executes synchronously. The `inqudium-imperative` classes remain unloaded throughout.
-
-The same trace with an async method (e.g. `CompletionStage<Order> placeOrderAsync(...)`) loads
-`AsyncDispatcher` and the async classes it transitively references, *only at the moment* the async branch is
-entered. Sync-only users never reach this branch and never pay the loading cost.
+If the same call is made with `inqudium-proxy` present, step 2 returns `true`, the `if`-branch is skipped,
+and the JVM proceeds to `ProxyDispatcher.protect(...)`. `ProxyDispatcher` is loaded on first execution of
+this line; the proxy's own paradigm-detection logic runs from there.
 
 #### What lazy loading does not protect
 
@@ -178,217 +282,117 @@ declarations whose types are mentioned directly. If any of those referenced type
 classpath, the JVM raises `NoClassDefFoundError` at the load of the referencing class itself, not when a
 particular method is invoked.
 
-This is why detection classes for paradigms whose marker types are *not* part of the JDK must use string-based
-references for their target types (see section 3). A `DetectionReactor` class that contains
-`Mono.class.isAssignableFrom(...)` would force the JVM to resolve `reactor.core.publisher.Mono` at the load of
-`DetectionReactor` — defeating the optional-dependency pattern at the very first step. The string-based
-hierarchy walk avoids this; it only inspects classes that are already loaded into the JVM by virtue of being
-present in the user's actual code.
-
-JDK types are exempt from this concern because they are guaranteed to be present at runtime.
-`CompletionStage.class.isAssignableFrom(...)` in `DetectionAsync` is safe because `CompletionStage` is part of
-the JDK; the JVM can always resolve it.
+This is why detection classes for integrations or paradigms whose marker types are *not* part of the JDK
+must use string-based references for their target types (see section 5). JDK types are exempt because they
+are guaranteed to be present at runtime.
 
 #### Architectural condition: no mixed dispatch structures
 
-The mechanism is also defeated by code that touches multiple paradigm-specific classes in a shared structure.
-For instance, populating an array `DispatchExtension[] extensions` with instances of every known extension
-forces the JVM to load every extension class at array-initialisation time, regardless of which one is later
-selected. The optional-dependency benefit is lost; sync-only users would suddenly need `inqudium-imperative`
-on their classpath, because the array's initialisation references it.
+The mechanism is also defeated by code that touches multiple integration-specific classes in a shared
+structure. For instance, populating an array `Dispatcher[] dispatchers` with instances of every known
+dispatcher forces the JVM to load every dispatcher class at array-initialisation time, regardless of which
+one is later selected. The optional-dependency benefit is lost; users would suddenly need every integration
+module on their classpath, because the array's initialisation references all of them.
 
-The dispatcher must therefore select a paradigm *before* it touches paradigm-specific classes — a hard-wired
-if-else chain that names each paradigm explicitly, rather than a generic iteration over a collection. This
-discipline, together with the avoidance of class-literal references to external types in detection classes, is
-not enforced by the compiler; it is a code-review responsibility.
+The default methods in `InqPipeline` must therefore select an integration *before* touching
+integration-specific classes — a hard-wired branch chain that names each integration explicitly. This
+discipline, together with the avoidance of class-literal references to external types in detection classes,
+is not enforced by the compiler; it is a code-review responsibility.
 
-### 5. Dispatch resolution and configuration error semantics
+### 7. Spring AOP as a thin adapter over `inqudium-proxy`
 
-The dispatcher in `inqudium-pipeline` resolves each method through a three-step procedure, in order:
+The library's Spring AOP integration is planned (but not implemented in the initial release) as a thin
+adapter over `inqudium-proxy` rather than as an independent dispatch implementation. A Spring aspect bean
+holds a JDK proxy per target (Spring bean); the aspect's `@Around` advice locates the proxy for the current
+target and delegates to it.
 
-**Step 1 — Annotation check.** The dispatcher first asks whether the method carries any resilience-element
-annotations. If not, the method is classified as pass-through (per ADR-036 section 7), invoked directly on
-the real target without any further consideration. Methods returning paradigm-specific types (such as
-`CompletionStage`) but lacking annotations follow this path; they require no paradigm support and trigger no
-classpath checks.
-
-**Step 2 — Paradigm-specific detection.** For annotated methods, the dispatcher consults each paradigm-specific
-detection class in turn. Each detection class exposes two static methods:
-
-- `canHandle(Method method)` — does this paradigm apply to the method? Typically a return-type check, e.g.
-  `CompletionStage.class.isAssignableFrom(method.getReturnType())`.
-- `isPresent()` — is the paradigm module's class on the runtime classpath?
-
-The two checks are deliberately separate. `canHandle` answers a conceptual question ("is this an async
-method?"); `isPresent` answers a configuration question ("is the async module available?"). Mixing them
-would conflate two different failure modes.
-
-The detection chain is hard-wired in the dispatcher, naming each paradigm explicitly:
+The conceptual sketch:
 
 ```java
-// In inqudium-pipeline, hard-wired chain:
-if (DetectionAsync.canHandle(method)) {
-    if (!DetectionAsync.isPresent()) {
-        throw new IllegalStateException(
-            "Method " + method + " requires async dispatch (return type " +
-            method.getReturnType().getName() + "), " +
-            "but inqudium-imperative is not on the classpath. " +
-            "Add it to your build configuration.");
-    }
-    return AsyncDispatcher.dispatch(method, args, ...);
-}
+// In inqudium-spring, future:
+public class InqShieldAspect {
+    private final InqPipeline pipeline;
+    private final Map<Object, Object> proxyCache = new ConcurrentHashMap<>();
 
-// Future paradigms appear here as additional named branches:
-// if (DetectionReactor.canHandle(method)) { ... }
-
-// Step 3 — fall through to sync default (see below).
-```
-
-**Step 3 — Synchronous default.** If no paradigm-specific detection has returned `true`, the method is
-classified as synchronous and dispatched through the synchronous chain. Synchronous dispatch is always
-available — `inqudium-pipeline` ships its synchronous logic directly. There is no `canHandle` and no
-`isPresent` check for synchronous dispatch; it is the default catch-all.
-
-#### The presence check
-
-Each paradigm-specific detection class (`DetectionAsync`, future `DetectionReactor`, etc.) implements
-`isPresent` using `Class.forName` with class initialisation disabled:
-
-```java
-public final class DetectionAsync {
-
-    private static final boolean PRESENT = checkPresence();
-
-    public static boolean canHandle(Method method) {
-        return CompletionStage.class.isAssignableFrom(method.getReturnType());
-    }
-
-    public static boolean isPresent() {
-        return PRESENT;
-    }
-
-    private static boolean checkPresence() {
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-        if (loader == null) {
-            loader = DetectionAsync.class.getClassLoader();
-        }
-        try {
-            Class.forName(
-                "eu.inqudium.imperative.AsyncLayerAction",
-                false,                                  // do not initialise
-                loader);
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
+    @Around("...")
+    public Object around(ProceedingJoinPoint pjp) {
+        Object target = pjp.getTarget();
+        Object proxy = proxyCache.computeIfAbsent(target, t ->
+            pipeline.protect(/* iface */ t.getClass().getInterfaces()[0], t));
+        // ...delegate to the corresponding method on proxy...
     }
 }
 ```
 
-The presence check runs once, when `DetectionAsync` itself is first loaded. The result is cached in the
-`PRESENT` static field. Subsequent invocations of `isPresent()` return the cached value with no further
-classpath inspection.
+This planned architecture has two benefits. First, it preserves a single proxy implementation for the
+library — Spring users transparently benefit from the same dispatch logic, the same correlation-ID handling
+(ADR-034), the same annotation evaluation (ADR-036). Second, it preserves the uniform user-facing API: a
+Spring application configures an `InqPipeline` bean and an `InqShieldAspect` bean over it; the rest is
+indistinguishable from the standalone proxy use case.
 
-`Class.forName(name, false, loader)` is the form the library uses: it locates the class by name without
-triggering its static initialisers. This is sufficient for a presence check (we only need to know the class
-exists) and avoids any side effects from initialisation.
-
-The classloader chosen for the lookup is the *context classloader* of the current thread, falling back to the
-classloader of the detection class itself if the context classloader is `null`. This is the established
-pattern for libraries that may run in container environments (Spring Boot fat JARs, servlet containers, OSGi)
-where the context classloader sees the user's optional dependencies, but the classloader of a library class
-loaded by a parent loader may not. Implementations may extend this with additional defensive fallback paths
-(e.g. trying both classloaders explicitly) without changing the spec; the spec mandates only that the context
-classloader is consulted first and that a `null` context classloader does not cause a failure.
-
-#### Failure outcomes
-
-The four cases that arise from the three-step resolution map cleanly:
-
-- **Annotated, paradigm-specific detection matches, module present.** The paradigm is used; dispatch proceeds.
-- **Annotated, paradigm-specific detection matches, module absent.** The dispatcher throws
-  `IllegalStateException` at proxy construction time (during phase-1 validation, per ADR-035) with a
-  descriptive message identifying the offending method and the missing module.
-- **Annotated, no paradigm-specific detection matches.** The method is dispatched synchronously.
-- **Not annotated.** The method is pass-through; classpath state of paradigm modules is irrelevant.
-
-The fail-fast principle applies to the third bullet's annotation case: errors surface during
-`pipeline.protect(...)`, not at first method invocation. Users who configure the build incorrectly receive
-clear diagnostics immediately, before any application traffic touches the proxy.
-
-### 6. Separation between `inqudium-core` and `inqudium-pipeline`
-
-`inqudium-core` carries the shared abstractions (`LayerAction`, `InqDecorator`, `Wrapper`, `PipelineIds`, the
-resilience-element infrastructure). It does not contain `InqPipeline` itself; the pipeline is a composition
-artefact, and its construction and dispatch live in `inqudium-pipeline`.
-
-This split is deliberate. A future module may use the shared abstractions without using `InqPipeline` — for
-instance, a function-based decoration scenario where `InqDecorator.decorateSupplier` is invoked directly
-without ever building a pipeline. Such a use case depends only on `inqudium-core`. Users who want pipeline
-composition depend additionally on `inqudium-pipeline`.
-
-The split also keeps `inqudium-core` free of any paradigm-specific logic. The recognition predicates and the
-dispatch routing live in `inqudium-pipeline`, not in `inqudium-core`. Future paradigms add their support by
-contributing a paradigm module and by extending the dispatch logic in `inqudium-pipeline`; they do not modify
-`inqudium-core`.
+The detailed specification for the Spring adapter is deferred to a future ADR. This ADR records the
+architectural intent so the choice is preserved through the initial implementation.
 
 ## Consequences
 
 **Positive:**
 
-- A user's classpath footprint matches the user's actual needs. Synchronous-only users do not pull in
-  `CompletionStage`-based machinery; non-Reactor users do not pull in Reactor.
-- Adding a new paradigm (e.g. RxJava 3) is a clean operation: a new module is created, its dispatch logic is
-  contained within it, and `inqudium-pipeline` adds a recognition predicate plus a dispatch-routing branch.
-  No existing module needs structural changes.
-- The `pipeline.protect(...)` API is the single user-facing entry point regardless of which paradigms are in
-  play. Users do not need to choose between sync, async, or hybrid factories; the library handles the choice
-  internally based on the method signatures it encounters.
-- Configuration errors are diagnosed clearly. A method requiring an absent paradigm module raises a
-  library-specific `IllegalStateException` with a message identifying the offending method and the missing
-  module — at proxy construction time, not at first invocation. Users do not have to interpret a JVM-level
-  `NoClassDefFoundError`.
+- A user's classpath footprint matches the user's actual needs. Synchronous-only functional-decoration users
+  depend on `inqudium-core` alone; proxy users add `inqudium-pipeline` and `inqudium-proxy`; async users
+  additionally include `inqudium-imperative`.
+- Adding a new integration is a clean operation: a new module is created with its own dispatcher, a detection
+  class is added to `inqudium-pipeline`, and an overload of `protect(...)` is added to the `InqPipeline`
+  interface. No existing module needs structural changes.
+- The `pipeline.protect(...)` API is the single user-facing entry point regardless of integration. The
+  method overload chosen by argument types is the implicit integration selector; users do not need to learn
+  factory classes or configuration knobs.
+- Configuration errors are diagnosed clearly. A method overload that requires an absent integration module
+  raises a library-specific `IllegalStateException` with a message identifying the missing module — at the
+  point of `protect(...)` invocation, not silently or as a JVM-level `NoClassDefFoundError`.
+- The `inqudium-pipeline` module is small and stable. It deals only with pipeline composition and
+  integration routing; it does not embed integration-specific complexity. Changes to integration internals
+  do not ripple into the pipeline module.
 - The pattern is established and battle-tested. Slf4j, Jackson, and similar libraries use the same
   optional-dependency approach with success.
 
 **Negative:**
 
-- The separation between recognition (in `inqudium-pipeline`) and dispatch (in paradigm-specific modules)
-  creates a coupling between modules that authors of new paradigms must understand. A new paradigm requires
-  changes in two places — the paradigm module itself, and the recognition routing in `inqudium-pipeline`.
-- The lazy-loading mechanism is an architectural condition that authors must respect. Two patterns can defeat
-  it. First, mixing dispatch paths in a shared structure (an array of `DispatchExtension` instances iterated
-  indiscriminately) forces eager class loading of all paradigms. Second, using class-literal references to
-  external types (e.g. `Mono.class`) inside a detection class forces the JVM to resolve those types when the
-  detection class itself is loaded — before the recognition logic ever runs. Both conditions are not enforced
-  by the compiler; they must be caught at code-review time.
-- Each paradigm-specific detection class carries two responsibilities: a conceptual `canHandle` check and a
-  classpath `isPresent` check. Authors of new paradigms must implement both consistently. Forgetting the
-  `isPresent` check would lead to `NoClassDefFoundError` at first method invocation; forgetting the
-  `canHandle` check would mean the paradigm is never selected. Both failure modes are obvious in testing but
-  must be caught at code-review time.
-- The hard-wired if-else chain that selects paradigms is closed for third-party extension. Adding a new
-  paradigm — for instance, an internal `inqudium-rxjava3` module developed within a user's organisation —
-  requires modifying the `inqudium-pipeline` source code to register a new branch in the chain. The library
-  does not provide a plugin mechanism (such as `ServiceLoader`) for runtime extension, because paradigm-
-  specific dispatch interfaces deliberately do not share a common type — `LayerAction` (synchronous),
-  `AsyncLayerAction` (two-phase async with decorated-copy contract), and any future paradigm interface
-  express semantically different around-advice contracts that cannot be reduced to a single shared interface
-  without losing type safety or semantic precision. A `ServiceLoader<X>` mechanism requires `X` to be a
-  single common type, which would force a problematic abstraction over heterogeneous dispatch styles.
-  Authors who need a new paradigm should propose its addition to the upstream project rather than treating
-  the library as an open extension surface.
+- The separation between detection (in `inqudium-pipeline`) and dispatch (in integration-specific modules)
+  creates a coupling between modules that authors of new integrations must understand. A new integration
+  requires changes in three places: the integration module itself, a detection class in `inqudium-pipeline`,
+  and a new overload on the `InqPipeline` interface.
+- The lazy-loading mechanism is an architectural condition that authors must respect. Two patterns can
+  defeat it. First, mixing dispatchers in a shared structure (an array of `Dispatcher` instances iterated
+  indiscriminately) forces eager class loading of all integrations. Second, using class-literal references
+  to external types (e.g. `Mono.class`) inside a detection class forces the JVM to resolve those types when
+  the detection class itself is loaded — before the recognition logic ever runs. Both conditions are not
+  enforced by the compiler; they must be caught at code-review time.
+- Each detection class carries the responsibility of correctly probing for its target. Authors must
+  implement `isPresent` consistently and choose a target class whose presence reliably indicates the
+  integration's availability. Probing the wrong class would lead to false negatives (rejecting a present
+  module) or false positives (accepting a partial module). The risk is small but real.
+- The hard-wired overload chain on `InqPipeline` is closed for third-party extension. Adding a new
+  integration — for instance, an internal `inqudium-kotlin-coroutines` module developed within a user's
+  organisation — requires modifying the `inqudium-pipeline` source code. The library does not provide a
+  plugin mechanism (such as `ServiceLoader`) for runtime extension, because integration interfaces
+  deliberately do not share a common type — the `protect(...)` overloads have different argument types and
+  return types that cannot be reduced to a single shared interface without losing type safety. Authors who
+  need a new integration should propose its addition to the upstream project rather than treating the
+  library as an open extension surface.
 
 **Neutral:**
 
-- The split between `inqudium-core` (shared abstractions) and `inqudium-pipeline` (composition + dispatch)
-  reflects a separation of concerns rather than a forced one. Function-based decoration and other use cases
-  that do not need a pipeline can depend on `inqudium-core` alone. The split is invisible to users who only
-  use the pipeline-based API.
-- Future paradigm modules (Reactor, RxJava, Kotlin coroutines) follow the same template. Each contributes a
-  module with its dispatch logic; each receives recognition support in `inqudium-pipeline`. The architecture
-  is open by design; ADR-035 acknowledges this in its mention of future Reactor support.
-- The relationship to ADR-035 (proxy integration) is foundational: ADR-035 specifies the proxy as the
-  user-visible integration, but the dispatch-routing mechanism it describes is realised through the module
-  topology in this ADR. The two ADRs are read together — ADR-035 for the user-facing semantics, ADR-037 for
-  the module-level realisation.
+- The split between `inqudium-core` (shared abstractions plus functional decoration plus synchronous
+  dispatch) and `inqudium-pipeline` (interface plus routing) reflects a separation of concerns rather than a
+  forced one. Function-based decoration users who do not need pipeline composition can depend on
+  `inqudium-core` alone. The split is invisible to users who only use the pipeline-based API.
+- Future integration modules (Reactor, RxJava, Kotlin coroutines, etc.) follow the same template. Each
+  contributes a module with its dispatcher; each receives a detection class in `inqudium-pipeline` and an
+  overload on `InqPipeline`. The architecture is open by design, scaled by adding modules rather than by
+  modifying existing ones.
+- The Spring AOP adapter strategy (section 7) means the eventual Spring integration becomes a small adapter
+  rather than a full re-implementation. This is recorded as architectural intent to be preserved through
+  the initial implementation; detailed specification follows in a future ADR.
+- The relationship to ADR-035 (proxy integration) is foundational: ADR-035 specifies the proxy as one
+  user-visible integration; ADR-037 specifies how the proxy is reached through `pipeline.protect(...)` and
+  how its module relates to the rest of the topology.
