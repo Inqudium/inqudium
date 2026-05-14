@@ -147,6 +147,36 @@ class InheritanceResolverTest {
         }
 
         @Test
+        void should_return_method_level_when_an_intermediate_class_overrides_an_interface_default_method_with_an_annotation() {
+            // What is to be tested?
+            //   InterfaceWithDefault declares default greet(). IntermediateOverridesDefaultWithRetry overrides
+            //   greet() and carries @InqRetry on the override. ConcreteInheritingFromIntermediateRetry extends
+            //   the intermediate without re-overriding. Per ADR-036 §6 and the corrected algorithm, the
+            //   resolver must walk the hierarchy first; a method-level annotation on the intermediate wins
+            //   even though the concrete class itself does not declare greet.
+            // How will the test case be deemed successful and why?
+            //   The result is MethodLevel pointing at the intermediate's greet. This is the headline JC2
+            //   scenario from the sub-step 3 correction: the previous "pass-through first" gate would have
+            //   misclassified this as PassThrough because the concrete class does not declare greet itself.
+            // Why is it important to test this test case?
+            //   This is a common real-world pattern: a base class that implements an interface default with
+            //   annotated behaviour, and concrete subclasses that inherit that behaviour. Misclassifying it
+            //   as PassThrough would silently strip resilience from every such subclass.
+
+            // Given
+            Method interfaceMethod = declared(InterfaceWithDefault.class, "greet");
+            Method expectedIntermediate = declared(
+                    IntermediateOverridesDefaultWithRetry.class, "greet");
+
+            // When
+            AnnotationSource result = resolver.resolve(
+                    interfaceMethod, ConcreteInheritingFromIntermediateRetry.class);
+
+            // Then
+            assertThat(result).isEqualTo(new AnnotationSource.MethodLevel(expectedIntermediate));
+        }
+
+        @Test
         void should_return_method_level_when_method_level_annotation_overrides_a_class_level_annotation_of_a_different_type() {
             // What is to be tested?
             //   MethodOverridesClassImpl carries class-level @InqBulkhead and method-level @InqRetry on
@@ -228,6 +258,78 @@ class InheritanceResolverTest {
                 // Sanity check: the @Inherited contract makes the annotation visible on the leaf.
                 assertThat(classLevel.annotationSourceClass().isAnnotationPresent(InqBulkhead.class)).isTrue();
             });
+        }
+
+        @Test
+        void should_return_class_level_only_when_intermediate_overrides_default_without_annotation_and_impl_has_class_level() {
+            // What is to be tested?
+            //   IntermediateOverridesDefaultUnannotated overrides the interface default without any
+            //   resilience annotation. ConcreteWithClassLevelOverIntermediate extends it and carries
+            //   class-level @InqBulkhead. The concrete class does not declare greet itself. Per ADR-036
+            //   §6 plus the corrected algorithm, the signatureMethod in the ClassLevelOnly result must be
+            //   the intermediate's override (the lowest declaring method in the hierarchy), and the
+            //   annotationSourceClass must be the concrete class.
+            // How will the test case be deemed successful and why?
+            //   The result is ClassLevelOnly with signatureMethod = intermediate's greet and
+            //   annotationSourceClass = concrete impl. This pins Phase 3's "lowest declaring method"
+            //   contract from the corrected spec.
+            // Why is it important to test this test case?
+            //   Without the correction, this case would either return PassThrough (if the old pre-walk
+            //   pass-through gate fired) or would lack a usable signature method for dispatch.
+
+            // Given
+            Method interfaceMethod = declared(InterfaceWithDefault.class, "greet");
+            Method expectedIntermediate = declared(
+                    IntermediateOverridesDefaultUnannotated.class, "greet");
+
+            // When
+            AnnotationSource result = resolver.resolve(
+                    interfaceMethod, ConcreteWithClassLevelOverIntermediate.class);
+
+            // Then
+            assertThat(result).isInstanceOfSatisfying(AnnotationSource.ClassLevelOnly.class, classLevel -> {
+                assertThat(classLevel.signatureMethod()).isEqualTo(expectedIntermediate);
+                assertThat(classLevel.annotationSourceClass())
+                        .isEqualTo(ConcreteWithClassLevelOverIntermediate.class);
+                assertThat(classLevel.annotationSourceClass()
+                        .isAnnotationPresent(InqBulkhead.class)).isTrue();
+            });
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // PassThrough via intermediate override (no annotations anywhere)
+    // ---------------------------------------------------------------------
+
+    @Nested
+    class IntermediateOverrideWithoutAnyAnnotation {
+
+        @Test
+        void should_return_pass_through_when_intermediate_overrides_default_without_annotation_and_impl_has_no_class_level() {
+            // What is to be tested?
+            //   IntermediateOverridesDefaultUnannotated overrides greet without an annotation.
+            //   ConcreteWithoutAnyAnnotationOverIntermediate extends it without declaring greet and without
+            //   any class-level resilience annotation. The hierarchy walk finds the intermediate's
+            //   unannotated override, records it as lowestDeclaringMethod, but Phase 3 finds nothing to fall
+            //   back to.
+            // How will the test case be deemed successful and why?
+            //   The result is PassThrough. This pins Phase 3's negative branch: lowestDeclaringMethod is
+            //   present (so we do not enter Phase 2's no-implementation gate), but no class-level annotation
+            //   applies either.
+            // Why is it important to test this test case?
+            //   Differentiates the corrected algorithm's two paths to PassThrough: "no declaring method
+            //   anywhere" (Phase 2) versus "declaring method exists but no annotations" (Phase 3 negative
+            //   branch). The previous implementation conflated these.
+
+            // Given
+            Method interfaceMethod = declared(InterfaceWithDefault.class, "greet");
+
+            // When
+            AnnotationSource result = resolver.resolve(
+                    interfaceMethod, ConcreteWithoutAnyAnnotationOverIntermediate.class);
+
+            // Then
+            assertThat(result).isEqualTo(new AnnotationSource.PassThrough());
         }
     }
 
@@ -410,6 +512,38 @@ class InheritanceResolverTest {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Fixtures — intermediate-class override of an interface default method
+    // ---------------------------------------------------------------------
+
+    static class IntermediateOverridesDefaultWithRetry implements InterfaceWithDefault {
+        @Override
+        @InqRetry("intermediate")
+        public String greet() {
+            return "intermediate-with-retry";
+        }
+    }
+
+    static class ConcreteInheritingFromIntermediateRetry extends IntermediateOverridesDefaultWithRetry {
+        // Intentionally empty: inherits the annotated override from the intermediate.
+    }
+
+    static class IntermediateOverridesDefaultUnannotated implements InterfaceWithDefault {
+        @Override
+        public String greet() {
+            return "intermediate-no-annotation";
+        }
+    }
+
+    @InqBulkhead("concrete-class-level-over-intermediate")
+    static class ConcreteWithClassLevelOverIntermediate extends IntermediateOverridesDefaultUnannotated {
+        // Intentionally empty: inherits the unannotated override; carries only a class-level annotation.
+    }
+
+    static class ConcreteWithoutAnyAnnotationOverIntermediate extends IntermediateOverridesDefaultUnannotated {
+        // Intentionally empty: inherits the unannotated override; carries no class-level annotation either.
+    }
+
     // Suppress unused warning for fixture-only types referenced exclusively via reflection.
     @SuppressWarnings("unused")
     private static final List<Class<?>> KEEP_ALIVE = List.of(
@@ -421,5 +555,8 @@ class InheritanceResolverTest {
             AnnotatedStringConsumer.class,
             MethodOverridesClassImpl.class,
             DirectClassLevelImpl.class,
-            ChildOfClassLevelParent.class);
+            ChildOfClassLevelParent.class,
+            ConcreteInheritingFromIntermediateRetry.class,
+            ConcreteWithClassLevelOverIntermediate.class,
+            ConcreteWithoutAnyAnnotationOverIntermediate.class);
 }

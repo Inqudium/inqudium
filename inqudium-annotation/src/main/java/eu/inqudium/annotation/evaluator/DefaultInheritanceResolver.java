@@ -19,9 +19,14 @@ import java.util.Optional;
  * signature lookups and walking the superclass chain from the
  * implementation class up to (but not including) {@link Object}.
  *
- * <p>The Spring-strict rule is encoded in step 2: as soon as a
- * method-level resilience annotation is found anywhere in the walk, the
- * search stops and class-level annotations are ignored entirely.</p>
+ * <p>The hierarchy walk runs before any pass-through decision: a
+ * method-level resilience annotation anywhere in the chain wins
+ * immediately (Spring-strict §6), and pass-through is only chosen once
+ * the walk yields no annotation. As a side effect of the walk, the
+ * lowest class in the hierarchy that declares the signature method is
+ * recorded so the class-level fallback can name a signature method even
+ * when the concrete implementation does not declare the method
+ * itself.</p>
  *
  * @since 0.8.0
  */
@@ -53,44 +58,53 @@ final class DefaultInheritanceResolver implements InheritanceResolver {
             throw new IllegalArgumentException("implementationClass must not be null");
         }
 
-        Optional<Method> implMethod = methodResolver.resolveAnnotationSourceMethod(
-                interfaceMethod, implementationClass);
+        Method lowestDeclaringMethod = null;
 
-        // Pass-through gate: the implementation class does not override an interface default method.
-        // DefaultMethodResolver returns empty in exactly that case (independent of the unrelated case
-        // where a method lives on a superclass) when the interface method is default.
-        if (implMethod.isEmpty() && interfaceMethod.isDefault()) {
-            return new AnnotationSource.PassThrough();
-        }
-
-        // Method-level hierarchy walk: stop at the first method that carries any resilience annotation.
+        // Phase 1: walk the hierarchy. First method-level annotation wins.
         for (Class<?> current = implementationClass;
              current != null && current != Object.class;
              current = current.getSuperclass()) {
-            Optional<Method> methodAtLevel = methodResolver.resolveAnnotationSourceMethod(
+            Optional<Method> candidate = methodResolver.resolveAnnotationSourceMethod(
                     interfaceMethod, current);
-            if (methodAtLevel.isPresent() && carriesAnyResilienceAnnotation(methodAtLevel.get())) {
-                return new AnnotationSource.MethodLevel(methodAtLevel.get());
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            Method method = candidate.get();
+            if (hasResilienceAnnotation(method)) {
+                return new AnnotationSource.MethodLevel(method);
+            }
+            if (lowestDeclaringMethod == null) {
+                lowestDeclaringMethod = method;
             }
         }
 
-        // Class-level fallback: only consult the implementation class. @Inherited makes class-level
-        // annotations on superclasses transparently visible via isAnnotationPresent on the subclass.
-        if (carriesAnyResilienceAnnotation(implementationClass)) {
-            if (implMethod.isPresent()) {
-                return new AnnotationSource.ClassLevelOnly(implMethod.get(), implementationClass);
-            }
+        // Phase 2: no method-level annotation anywhere. If no class declares the signature method,
+        // there is nothing to protect. For an interface default method this is the "default not
+        // overridden" case from ADR-036 §7; for an abstract interface method this is a malformed
+        // implementation that the evaluator does not protect.
+        if (lowestDeclaringMethod == null) {
+            return new AnnotationSource.PassThrough();
+        }
+
+        // Phase 3: class-level fallback. isAnnotationPresent on the implementation class
+        // transparently picks up @Inherited class-level annotations from superclasses.
+        if (hasClassLevelResilienceAnnotation(implementationClass)) {
+            return new AnnotationSource.ClassLevelOnly(lowestDeclaringMethod, implementationClass);
         }
 
         return new AnnotationSource.PassThrough();
     }
 
-    private static boolean carriesAnyResilienceAnnotation(AnnotatedElement element) {
+    private static boolean hasResilienceAnnotation(AnnotatedElement element) {
         for (Class<? extends Annotation> annotationType : RESILIENCE_ELEMENT_ANNOTATIONS) {
             if (element.isAnnotationPresent(annotationType)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean hasClassLevelResilienceAnnotation(Class<?> clazz) {
+        return hasResilienceAnnotation(clazz);
     }
 }
