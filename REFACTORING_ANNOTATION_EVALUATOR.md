@@ -60,7 +60,7 @@ consume.
   type.
 - **Module dependency:** `inqudium-annotation` depends on `inqudium-core`
   for `InqElementType`, `InqPipeline`, and the existing
-  `PipelineOrdering.Profiles.RESILIENCE4J` ordering. Added in sub-step 1.
+  `PipelineOrdering.resilience4j()` ordering accessor. Added in sub-step 1.
 
 ## Existing module landscape
 
@@ -322,10 +322,6 @@ sealed interface AnnotationSource {
 }
 ```
 
-`annotationSourceClass` in `ClassLevelOnly` is the implementation class
-passed into `InheritanceResolver.resolve` — the caller reads class-level
-annotations from it via standard reflection.
-
 #### `InheritanceResolver`
 
 Package-private interface:
@@ -337,160 +333,44 @@ interface InheritanceResolver {
 ```
 
 The default implementation composes a `MethodResolver` and applies the
-following algorithm. The order is significant: the hierarchy walk runs
-*before* any pass-through decision, so that a method-level annotation on
-an intermediate class is found even when the concrete implementation does
-not itself declare the method.
+following algorithm in this order: hierarchy walk first, pass-through
+decision second.
 
-1. **Hierarchy walk for method-level annotations.** Walk the chain
-   `implementationClass`, then `implementationClass.getSuperclass()`, and
-   so on, stopping at (but not visiting) `Object.class`. At each class
-   `currentClass`:
-   - Invoke
-     `methodResolver.resolveAnnotationSourceMethod(interfaceMethod, currentClass)`.
-   - If the result is present:
-     - If the method carries any Inqudium resilience element annotation
-       (`@InqCircuitBreaker`, `@InqRetry`, `@InqBulkhead`,
-       `@InqRateLimiter`, `@InqTimeLimiter`, `@InqTrafficShaper`), return
-       `AnnotationSource.MethodLevel(method)` immediately.
-     - Otherwise, if `lowestDeclaringMethod` has not yet been recorded,
-       record this method as the lowest declaring method in the
-       hierarchy. Continue the walk.
-   - If the result is empty, continue.
+1. **Hierarchy walk for method-level annotations.** Walk
+   `implementationClass` and its superclass chain, stopping at (but not
+   visiting) `Object.class`. At each `currentClass`, invoke
+   `methodResolver.resolveAnnotationSourceMethod(interfaceMethod, currentClass)`.
+   If the result is present and the method carries any Inqudium element
+   annotation, return `MethodLevel(method)` immediately. Otherwise,
+   record the first non-empty result as `lowestDeclaringMethod` and
+   continue.
+2. **No-implementation gate.** If no class in the chain declared the
+   method (`lowestDeclaringMethod == null`), return `PassThrough`.
+3. **Class-level fallback.** If `implementationClass` has any class-level
+   resilience annotation (`isAnnotationPresent` transparently handles
+   `@Inherited`), return
+   `ClassLevelOnly(lowestDeclaringMethod, implementationClass)`. Otherwise
+   return `PassThrough`.
 
-   After the walk, no method-level annotation was found anywhere.
-   `lowestDeclaringMethod` is either the lowest method in the hierarchy
-   matching the signature, or `null` if no class in the hierarchy
-   declares it.
-
-2. **No-implementation gate.** If `lowestDeclaringMethod` is `null`:
-   - The implementation has no method matching the interface signature
-     anywhere. For a default interface method this is the classic
-     "default not overridden" case (per ADR-036 §7); for an abstract
-     interface method this is a malformed implementation that the
-     evaluator does not protect.
-   - Return `AnnotationSource.PassThrough`.
-
-3. **Class-level fallback.** `lowestDeclaringMethod` is non-null; check
-   whether `implementationClass` has any class-level resilience
-   annotation (via standard `isAnnotationPresent`, which transparently
-   picks up `@Inherited` from superclasses).
-   - If yes, return
-     `AnnotationSource.ClassLevelOnly(lowestDeclaringMethod, implementationClass)`.
-   - If no, return `AnnotationSource.PassThrough`.
-
-The Spring-strict rule is encoded in step 1: as soon as a method-level
-annotation is found, the walk stops and class-level annotations are
-ignored entirely. The reordering relative to a naive "pass-through
-first, walk second" approach is what allows method-level annotations on
-intermediate classes to be discovered when the concrete implementation
-inherits the method without overriding it.
-
-Defensive checks at entry: reject `null` for either parameter with
-`IllegalArgumentException`.
+Defensive checks at entry: reject `null` with `IllegalArgumentException`.
 
 ### Tests
 
-Two test classes — one per resolver — at:
-
-- `inqudium-annotation/src/test/java/eu/inqudium/annotation/evaluator/MethodResolverTest.java`
-- `inqudium-annotation/src/test/java/eu/inqudium/annotation/evaluator/InheritanceResolverTest.java`
-
-Test fixtures are static nested classes within the test classes.
-
-**`MethodResolverTest` — at minimum:**
-
-- Default method that the target class does not override anywhere in its
-  hierarchy → `Optional.empty()`.
-- Default method overridden on the queried target class itself →
-  returns the override.
-- Default method overridden on an ancestor; queried against the leaf
-  class → `Optional.empty()` (the resolver is per-class; the method is
-  not declared on the leaf).
-- Default method overridden on an ancestor; queried against the
-  ancestor class → returns the override.
-- Non-default interface method, target class declares a matching method
-  directly → returns it.
-- Non-default interface method, target class does *not* declare a
-  matching method → `Optional.empty()`.
-- Generic interface, target class declares a bridge plus the typed
-  method → returns the typed method via `BridgeMethodResolver`.
-- Defensive: null `interfaceMethod` or null `targetClass` →
-  `IllegalArgumentException`.
-
-**`InheritanceResolverTest` — at minimum:**
-
-All three `AnnotationSource` variants must be reached, with the
-intermediate-class cases explicitly covered.
-
-- **`PassThrough` — default method not overridden:** Default method, no
-  override anywhere, no annotations. → `PassThrough`.
-- **`PassThrough` — unannotated chain:** Concrete method, no resilience
-  annotation anywhere. → `PassThrough`.
-- **`MethodLevel` — direct on impl:** Impl method carries `@InqRetry`.
-  → `MethodLevel(implMethod)`.
-- **`MethodLevel` — on direct parent:** Impl inherits method from
-  parent; parent's method carries `@InqRetry`. →
-  `MethodLevel(parentMethod)`.
-- **`MethodLevel` — on deep ancestor:** Three-level hierarchy; only
-  grandparent's method carries the annotation. →
-  `MethodLevel(grandparentMethod)`.
-- **`MethodLevel` — default-method overridden by intermediate with
-  annotation:** Interface default method; intermediate class overrides
-  it with `@InqRetry`; concrete class extends the intermediate without
-  re-overriding. → `MethodLevel(intermediateMethod)`. This is the
-  scenario that the JC2 spec correction in this sub-step explicitly
-  addresses.
-- **`MethodLevel` via bridge:** Generic interface; impl class has bridge
-  + typed method; typed method carries `@InqRetry`. →
-  `MethodLevel(typedMethod)`.
-- **`MethodLevel` overrides class-level:** Impl class has class-level
-  `@InqBulkhead`; impl method has method-level `@InqRetry` (different
-  element type). → `MethodLevel(implMethod)` — class-level is *not*
-  mixed in.
-- **`ClassLevelOnly` — direct on impl:** Impl class has class-level
-  annotation; method has none. →
-  `ClassLevelOnly(implMethod, implClass)`.
-- **`ClassLevelOnly` — via `@Inherited` from superclass:** Parent class
-  carries class-level annotation; impl inherits it. Method has no
-  method-level annotation. →
-  `ClassLevelOnly(implMethod, implClass)`.
-- **`ClassLevelOnly` — default-method overridden by intermediate without
-  annotation, impl has class-level:** Interface default method;
-  intermediate class overrides without annotation; impl extends and
-  declares class-level annotation. → `ClassLevelOnly(intermediateMethod,
-  implClass)`. The signature method points at the intermediate's
-  override; the annotation source is the impl class.
-- **`PassThrough` — default-method overridden by intermediate without
-  annotation, no class-level anywhere:** Interface default method;
-  intermediate class overrides without annotation; impl extends without
-  class-level. → `PassThrough`.
-- Defensive: null `interfaceMethod` or null `implementationClass` →
-  `IllegalArgumentException`.
-
-### What this sub-step does NOT do
-
-- Validate annotation contents (names, mutual exclusion of `@InqShield`
-  attributes). That is sub-step 4.
-- Check that referenced element names exist in the pipeline. That is
-  sub-step 5.
-- Order the annotations. That is sub-step 4.
-- Read the actual annotation values — the resolvers locate where
-  annotations live; reading them is the caller's job.
+See `MethodResolverTest` and `InheritanceResolverTest`. All three
+`AnnotationSource` variants are reached by separate tests, with the
+intermediate-class cases explicitly covered. At least one test pins
+the bridge integration; at least one test pins the JC2 scenario
+(default-method overridden by intermediate class with annotation, impl
+inherits without re-overriding → `MethodLevel`).
 
 ### Verification gates
 
 - Full reactor `mvn verify` is green.
-- All three `AnnotationSource` variants are reached by at least one test
-  each. `ClassLevelOnly` has separate tests for the direct-on-impl path,
-  the `@Inherited`-from-superclass path, and the intermediate-override
-  path.
-- At least one test in `InheritanceResolverTest` exercises the
-  bridge-method path through the inheritance walk.
-- At least one test pins the JC2 scenario explicitly: default-method
-  overridden by intermediate class with annotation, concrete impl
-  inherits without re-overriding, → `MethodLevel` on the intermediate's
-  method.
+- All three `AnnotationSource` variants are reached.
+- `ClassLevelOnly` has separate tests for direct-on-impl,
+  `@Inherited`-from-superclass, and intermediate-override paths.
+- At least one test exercises the bridge-method path through the
+  inheritance walk.
 
 ## Sub-step 4: `OrderingResolver`
 
@@ -536,51 +416,21 @@ Logic:
    - Else if `order` is `"INQUDIUM"` → sort the present types by
      `InqElementType.defaultPipelineOrder()` ascending.
    - Else if `order` is `"RESILIENCE4J"` → sort the present types by the
-     existing `PipelineOrdering.Profiles.RESILIENCE4J` ordering.
+     existing `PipelineOrdering.resilience4j()` ordering.
    - Else → throw `InqAnnotationConfigurationException` (unknown `order`).
 4. Return the ordered list.
 
-If the annotation source carries no element annotations at all, the
-resolver returns an empty list (no exception). This case does not arise
-under normal evaluator operation — the caller ensures element
-annotations are present before invoking — but the empty result is the
-mathematically consistent behaviour ("sort the empty set in any order
-→ empty").
+If the annotation source carries no element annotations, the resolver
+returns an empty list (no exception).
 
 Defensive checks at entry: reject `null` with `IllegalArgumentException`.
 
 ### Tests
 
-- No `@InqShield`, single element annotation on a method → default
-  INQUDIUM order, the single type returned.
-- No `@InqShield`, multiple element annotations on a method →
-  INQUDIUM order applied.
-- Explicit `@InqShield(order = "RESILIENCE4J")` with multiple
-  annotations → R4J order applied.
-- `customOrder` with a single annotation → that single type in the list.
-- `customOrder` with multiple annotations in non-default order → that
-  exact order returned.
-- `@InqShield` with both `order = "RESILIENCE4J"` and a non-empty
-  `customOrder` → fails with descriptive message.
-- `customOrder` missing a type that is annotated on the source → fails.
-- `customOrder` containing a type that is not annotated on the source →
-  fails.
-- `@InqShield(order = "BOGUS")` → fails.
-- **Class-level input:** at least one test uses a `Class<?>` (not a
-  `Method`) as the annotation source, verifying that the resolver works
-  uniformly across both `AnnotatedElement` subtypes.
-- No element annotations and no `@InqShield` → empty list (no
-  exception).
-- Defensive: null input → `IllegalArgumentException`.
-
-### What this sub-step does NOT do
-
-- Check that referenced element names exist in the pipeline (sub-step 5).
-- Drive the resolution of which annotated element to use — it assumes
-  its input has already been chosen by `InheritanceResolver`.
-- Look at class-level annotations when the input is a method (and vice
-  versa). The resolver reads annotations off the element it was given,
-  nothing more.
+See `OrderingResolverTest`. All three ordering modes are covered
+positively, all four §9 validation rules are pinned negatively with
+exception-message assertions, and at least one test uses a `Class<?>`
+as input.
 
 ### Verification gates
 
@@ -596,11 +446,13 @@ Defensive checks at entry: reject `null` with `IllegalArgumentException`.
 
 ### Goal
 
-Compose the previous sub-steps into the public top-level evaluator. Given
-a pipeline plus a service interface and its implementation class, produce
-a per-method `MethodPlan` map.
+Compose the previous sub-steps into the public top-level evaluator.
+Given a pipeline plus a service interface and its implementation class,
+produce a per-method `MethodPlan` map.
 
 ### Spec
+
+Public types:
 
 ```java
 public sealed interface MethodPlan {
@@ -608,8 +460,10 @@ public sealed interface MethodPlan {
     record Decorated(List<String> elementNamesOuterToInner) implements MethodPlan {}
 }
 
-public final class EvaluationResult {
-    Map<Method, MethodPlan> plans();
+public record EvaluationResult(Map<Method, MethodPlan> plans) {
+    public EvaluationResult {
+        plans = Map.copyOf(plans);
+    }
 }
 
 public interface AnnotationEvaluator {
@@ -618,72 +472,89 @@ public interface AnnotationEvaluator {
 }
 ```
 
+`MethodPlan` is a sealed interface with two record variants.
+`EvaluationResult` is a record whose compact constructor defensively
+copies the input map so the returned plan is immutable. The public API
+surface is exactly four types: `MethodPlan`, `EvaluationResult`,
+`AnnotationEvaluator`, and `InqAnnotationConfigurationException` (the
+last one already public from sub-step 2). `AnnotationSource` and the
+three resolver interfaces remain package-private.
+
+Algorithm (per ADR-036 §1, §2, §4):
+
 For each method on `serviceInterface`:
 
 1. Invoke `InheritanceResolver.resolve(interfaceMethod, implementationClass)`,
    yielding an `AnnotationSource`.
-2. Dispatch on the result; in the non-`PassThrough` cases, the
-   relevant `AnnotatedElement` is either the method (for `MethodLevel`)
-   or the annotation source class (for `ClassLevelOnly`).
+2. Dispatch on the result. In the non-`PassThrough` cases, the relevant
+   `AnnotatedElement` is either the method (for `MethodLevel`) or the
+   annotation source class (for `ClassLevelOnly`).
    - `PassThrough` → `MethodPlan.PassThrough`.
-   - `MethodLevel(method)` → the annotated element for further reads is
-     `method`. The annotations are method-scope; class-level annotations
-     on the implementation are ignored, per ADR-036 §6.
+   - `MethodLevel(method)` → the annotated element is `method`. The
+     annotations are method-scope; class-level annotations on the
+     implementation are ignored, per ADR-036 §6.
    - `ClassLevelOnly(signatureMethod, annotationSourceClass)` → the
-     annotated element for further reads is `annotationSourceClass`.
-     The annotations are class-scope; the method itself has none.
+     annotated element is `annotationSourceClass`. The annotations are
+     class-scope; the method itself has none.
 3. Read all Inqudium element annotations from the chosen annotated
-   element. Verify that every referenced element name exists in the
-   pipeline. Otherwise, throw `InqAnnotationConfigurationException`.
+   element. For each annotation's `value()` (the element instance name),
+   verify that the pipeline contains an element with that name.
+   Otherwise, throw `InqAnnotationConfigurationException` naming the
+   service interface, the method, the annotation, and the missing
+   element name.
 4. Resolve the ordering via
    `OrderingResolver.resolveOrder(annotatedElement)`.
-5. Project the ordered element types onto their corresponding element
-   names from the annotations. Wrap in `MethodPlan.Decorated`.
+5. Project each ordered element type onto its element name from the
+   annotations. Wrap the resulting `List<String>` in
+   `MethodPlan.Decorated`.
 
-Fail-fast: the first error in any method aborts the entire evaluation.
+Fail-fast: the first error in any method aborts the entire evaluation
+with `InqAnnotationConfigurationException`. The cache key on the
+resulting map is the interface method, per ADR-036 §5 step 5.
 
-The cache key on the resulting map is the interface method, per ADR-036
-§5 step 5.
+The default implementation `DefaultAnnotationEvaluator` is
+package-private and wires up the three resolvers
+(`DefaultMethodResolver`, `DefaultInheritanceResolver`,
+`DefaultOrderingResolver`) inside its constructor. The static factory
+`AnnotationEvaluator.forPipeline(InqPipeline)` returns an instance.
 
 ### Tests
 
-- Single-method interface, single element annotation, name exists in
-  pipeline → `Decorated` with one entry.
-- Single-method interface, multiple element annotations, default order →
-  `Decorated` with INQUDIUM order.
-- Default interface method, implementation does not override →
-  `PassThrough`.
+End-to-end tests with synthetic service interfaces covering:
+
+- Single-method interface, single element annotation, name in pipeline
+  → `Decorated` with one entry.
+- Single-method interface, multiple element annotations, default order
+  → `Decorated` with INQUDIUM order.
+- Default interface method, impl does not override → `PassThrough`.
 - Method without resilience annotations anywhere in the chain →
   `PassThrough`.
-- Annotation references an element name not in the pipeline → fails with
-  descriptive message.
+- Annotation references an element name not in the pipeline → throws,
+  message names the missing element.
 - Class-level annotation, method without method-level annotation →
-  `Decorated` derived from class-level annotations (`ClassLevelOnly`
-  path).
-- Method-level annotation overrides class-level annotation of a different
-  type — the class-level annotation does not contribute to the plan
-  (`MethodLevel` path; class-level is ignored).
-- Generic interface with a bridge method on the implementation → plan is
-  resolved against the typed method's annotations and cached against
-  the interface method.
+  `Decorated` derived from class-level annotations.
+- Method-level annotation overrides class-level annotation of a
+  different type — class-level not in the plan.
+- Generic interface with a bridge on the impl → plan resolved against
+  the typed method's annotations, cached against the interface method.
 - Multiple methods on the same interface produce independent plans.
-
-### What this sub-step does NOT do
-
-- Build any per-method decorator stack. The plan is a data structure;
-  consuming it is the next phase's responsibility.
-- Touch `InqAsyncProxyFactory` or any proxy code.
-- Interpret `fallbackMethod` — the attribute on the element annotations is
-  read but its value is not stored or surfaced anywhere.
+- Defensive: null input → `IllegalArgumentException`.
 
 ### Verification gates
 
 - Full reactor `mvn verify` is green.
-- End-to-end tests with synthetic service interfaces cover all rows in
-  the test list above.
-- The evaluator has no public collaborators beyond the static factory,
-  the `evaluate` method, the result type, and the plan sealed hierarchy.
-  `AnnotationSource` remains package-private.
+- The end-to-end tests cover all bullets above.
+- The public API surface under
+  `inqudium-annotation/src/main/java/eu/inqudium/annotation/evaluator/`
+  consists of exactly the four types named in the Spec section.
+  `AnnotationSource`, `MethodResolver`, `InheritanceResolver`,
+  `OrderingResolver`, and their default impls all remain
+  package-private.
+- The `EvaluationResult` record's plan map is immutable — modifying
+  the returned map via cast or reflection raises
+  `UnsupportedOperationException` (this is a side effect of
+  `Map.copyOf`, no explicit assertion required unless the test author
+  wants one).
 
 ## Phase closure
 
