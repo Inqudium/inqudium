@@ -1,9 +1,20 @@
 # ADR-017: Pipeline composition order
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-041 (2026-05-14)  
 **Date:** 2026-03-23  
-**Last updated:** 2026-04-13  
+**Last updated:** 2026-05-14  
 **Deciders:** Core team
+
+> **Superseded.** This ADR's content has been consolidated into ADR-041 (Pipeline Composition Ordering),
+> with the annotation-mechanics portions moved to ADR-036 (Annotation Model). ADR-017 is retained for
+> historical reference; new readers should consult ADR-041 for the current ordering specification and
+> ADR-036 for the annotation attributes that select an ordering.
+>
+> The substantive content below — pipeline ordering strategies, the rationale for deviations from
+> Resilience4j, the element-pair decision matrix, the cache-is-not-a-pipeline-element rule — is preserved
+> in ADR-041 with normalised terminology (`customOrder = InqElementType[]` replacing the obsolete
+> source-order `"CUSTOM"` mechanism). The `@InqShield` annotation specification has moved entirely to
+> ADR-036.
 
 ## Context
 
