@@ -581,4 +581,4 @@ When all sub-steps are approved:
 - [x] 2 — `BridgeMethodResolver` and `InqAnnotationConfigurationException` (2026-05-14, PR #54)
 - [x] 3 — `MethodResolver`, `AnnotationSource`, and `InheritanceResolver` (2026-05-14, PR #55)
 - [x] 4 — `OrderingResolver` (2026-05-14, PR #56)
-- [ ] 5 — `AnnotationEvaluator`
+- [x] 5 — `AnnotationEvaluator` (2026-05-14, PR #57)
