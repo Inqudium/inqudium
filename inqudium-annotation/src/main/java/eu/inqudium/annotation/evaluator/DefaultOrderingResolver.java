@@ -1,12 +1,6 @@
 package eu.inqudium.annotation.evaluator;
 
-import eu.inqudium.annotation.InqBulkhead;
-import eu.inqudium.annotation.InqCircuitBreaker;
-import eu.inqudium.annotation.InqRateLimiter;
-import eu.inqudium.annotation.InqRetry;
 import eu.inqudium.annotation.InqShield;
-import eu.inqudium.annotation.InqTimeLimiter;
-import eu.inqudium.annotation.InqTrafficShaper;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.pipeline.PipelineOrdering;
 
@@ -16,7 +10,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,24 +32,6 @@ final class DefaultOrderingResolver implements OrderingResolver {
 
     private static final String ORDER_INQUDIUM = "INQUDIUM";
     private static final String ORDER_RESILIENCE4J = "RESILIENCE4J";
-
-    /**
-     * Maps each Inqudium element annotation class to the element type it
-     * represents. Iteration order is deterministic (insertion order), which
-     * makes diagnostic messages predictable.
-     */
-    private static final Map<Class<? extends Annotation>, InqElementType> ANNOTATION_TO_TYPE;
-
-    static {
-        Map<Class<? extends Annotation>, InqElementType> map = new LinkedHashMap<>();
-        map.put(InqCircuitBreaker.class, InqElementType.CIRCUIT_BREAKER);
-        map.put(InqRetry.class, InqElementType.RETRY);
-        map.put(InqBulkhead.class, InqElementType.BULKHEAD);
-        map.put(InqRateLimiter.class, InqElementType.RATE_LIMITER);
-        map.put(InqTimeLimiter.class, InqElementType.TIME_LIMITER);
-        map.put(InqTrafficShaper.class, InqElementType.TRAFFIC_SHAPER);
-        ANNOTATION_TO_TYPE = map;
-    }
 
     @Override
     public List<InqElementType> resolveOrder(AnnotatedElement annotationSource) {
@@ -101,7 +76,8 @@ final class DefaultOrderingResolver implements OrderingResolver {
 
     private static Set<InqElementType> collectPresentTypes(AnnotatedElement annotationSource) {
         EnumSet<InqElementType> present = EnumSet.noneOf(InqElementType.class);
-        for (Map.Entry<Class<? extends Annotation>, InqElementType> entry : ANNOTATION_TO_TYPE.entrySet()) {
+        for (Map.Entry<Class<? extends Annotation>, InqElementType> entry
+                : ElementAnnotations.ANNOTATION_TO_TYPE.entrySet()) {
             if (annotationSource.isAnnotationPresent(entry.getKey())) {
                 present.add(entry.getValue());
             }
@@ -129,17 +105,17 @@ final class DefaultOrderingResolver implements OrderingResolver {
                             + missingFromCustom);
         }
 
-        EnumSet<InqElementType> notPresent = EnumSet.copyOf(customSet);
-        notPresent.removeAll(present);
-        if (!notPresent.isEmpty()) {
-            throw new InqAnnotationConfigurationException(
-                    "@InqShield on " + describe(annotationSource)
-                            + " customOrder=" + typesOf(customOrder)
-                            + " references element type(s) that are not annotated on the source: "
-                            + notPresent);
+        // Per ADR-036 §3, customOrder may list element types that the source does not
+        // carry; the resolver silently filters such extras out so that a single
+        // constant InqElementType[] can be reused across sources whose annotation
+        // subsets differ.
+        List<InqElementType> projected = new ArrayList<>(present.size());
+        for (InqElementType type : customOrder) {
+            if (present.contains(type)) {
+                projected.add(type);
+            }
         }
-
-        return List.of(customOrder.clone());
+        return List.copyOf(projected);
     }
 
     private static List<InqElementType> sortBy(

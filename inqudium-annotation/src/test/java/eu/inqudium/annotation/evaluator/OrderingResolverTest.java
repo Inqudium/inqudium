@@ -166,6 +166,41 @@ class OrderingResolverTest {
         }
 
         @Test
+        void should_apply_the_same_custom_order_to_methods_with_different_annotation_subsets() {
+            // What is to be tested?
+            //   Two methods declare identical customOrder = {BULKHEAD, CIRCUIT_BREAKER, RETRY} but
+            //   carry different subsets of those annotations — one method carries @InqBulkhead and
+            //   @InqRetry, the other carries all three. The resolver must project the customOrder
+            //   onto each method's actual annotation set, preserving the customOrder's sequence.
+            // How will the test case be deemed successful and why?
+            //   Method 1 (BH + RT) resolves to [BULKHEAD, RETRY]; method 2 (BH + CB + RT) resolves to
+            //   [BULKHEAD, CIRCUIT_BREAKER, RETRY]. Both follow the customOrder's sequence (BH
+            //   before CB before RT), neither resorts to INQUDIUM or RESILIENCE4J order, and
+            //   neither leaks absent types into the result.
+            // Why is it important to test this test case?
+            //   This is the source-level reuse pattern that the §3 adjustment (PR #58,
+            //   superset-with-filter) enables: identical customOrder arrays can be repeated at each
+            //   call site without forcing every site to align its annotation subset with the
+            //   array. A regression that re-introduced set-equality validation would surface here
+            //   as an exception on either method.
+
+            // Given
+            Method twoAnnotations = methodOf(SharedConstantReuseFixture.class, "two");
+            Method threeAnnotations = methodOf(SharedConstantReuseFixture.class, "three");
+
+            // When
+            List<InqElementType> orderTwo = resolver.resolveOrder(twoAnnotations);
+            List<InqElementType> orderThree = resolver.resolveOrder(threeAnnotations);
+
+            // Then
+            assertThat(orderTwo).containsExactly(InqElementType.BULKHEAD, InqElementType.RETRY);
+            assertThat(orderThree).containsExactly(
+                    InqElementType.BULKHEAD,
+                    InqElementType.CIRCUIT_BREAKER,
+                    InqElementType.RETRY);
+        }
+
+        @Test
         void should_return_custom_order_as_is_when_set_equals_the_present_annotations() {
             // What is to be tested?
             //   @InqShield(customOrder = {BULKHEAD, RETRY}) declared in that exact order on a method
@@ -241,28 +276,29 @@ class OrderingResolverTest {
         }
 
         @Test
-        void should_throw_when_custom_order_references_a_type_that_is_not_present_on_the_source() {
+        void should_filter_extra_type_out_of_custom_order_when_custom_order_includes_an_absent_type() {
             // What is to be tested?
-            //   @InqShield(customOrder = {BULKHEAD}) on a method that carries @InqRetry only.
-            //   BULKHEAD is not annotated; the set-equality check must fail.
+            //   @InqShield(customOrder = {RETRY, BULKHEAD}) on a method that carries @InqRetry only.
+            //   Per the relaxed ADR-036 §3 rule, BULKHEAD is filtered out silently; the resolver
+            //   returns the projected, customOrder-sequenced subset rather than throwing.
             // How will the test case be deemed successful and why?
-            //   The resolver throws InqAnnotationConfigurationException whose message names BULKHEAD —
-            //   the offending type that is in customOrder but not on the source — so a reader can
-            //   identify the mistake from the message alone.
+            //   resolveOrder returns [RETRY] and does not throw. A regression that re-introduced the
+            //   set-equality check would surface as an exception; a regression that broke the
+            //   projection would either drop RETRY or include BULKHEAD.
             // Why is it important to test this test case?
-            //   A typo in customOrder would otherwise produce a list that mentions a non-present
-            //   element, which would later blow up at pipeline-name resolution with a much less
-            //   helpful error. Failing fast at the annotation layer is part of the §9 contract.
+            //   ADR-036 §3 calls out this case as the reason for the relaxed customOrder semantics:
+            //   a shared constant must remain usable across methods that select different subsets
+            //   of the constant's entries. Pinning the filter behaviour prevents a silent regression
+            //   of the constant-reuse pattern.
 
             // Given
             Method method = methodOf(CustomOrderReferencesAbsentType.class, "perform");
 
-            // When / Then
-            assertThatThrownBy(() -> resolver.resolveOrder(method))
-                    .isInstanceOf(InqAnnotationConfigurationException.class)
-                    .hasMessageContaining(CustomOrderReferencesAbsentType.class.getName())
-                    .hasMessageContaining("customOrder")
-                    .hasMessageContaining("BULKHEAD");
+            // When
+            List<InqElementType> order = resolver.resolveOrder(method);
+
+            // Then
+            assertThat(order).containsExactly(InqElementType.RETRY);
         }
 
         @Test
@@ -290,29 +326,29 @@ class OrderingResolverTest {
         }
 
         @Test
-        void should_throw_when_multi_entry_custom_order_references_a_type_that_is_not_present_on_the_source() {
+        void should_filter_multiple_extra_types_out_of_custom_order_preserving_the_remaining_sequence() {
             // What is to be tested?
-            //   @InqShield(customOrder = {BULKHEAD, RETRY}) on a method carrying @InqRetry only.
-            //   The customOrder is well-formed length-wise but BULKHEAD is not annotated; this
-            //   exercises the "set superset" branch separately from the single-entry case so a
-            //   regression in either branch is pinned.
+            //   @InqShield(customOrder = {TIME_LIMITER, BULKHEAD, CIRCUIT_BREAKER, RETRY}) on a
+            //   method that carries @InqBulkhead and @InqRetry only. TIME_LIMITER and
+            //   CIRCUIT_BREAKER are extras; the resolver must filter both out while preserving the
+            //   customOrder sequence of the remaining types.
             // How will the test case be deemed successful and why?
-            //   The resolver throws InqAnnotationConfigurationException; the message names BULKHEAD —
-            //   the offending entry that has no matching annotation on the source.
+            //   resolveOrder returns [BULKHEAD, RETRY] — both extras filtered out, BULKHEAD before
+            //   RETRY exactly as written in customOrder. A bug that broke order preservation would
+            //   yield [RETRY, BULKHEAD]; a bug that lost the filter would yield all four entries.
             // Why is it important to test this test case?
-            //   Multi-entry customOrder is the realistic shape (single-element customOrder is
-            //   degenerate). A bug that only handled length=1 correctly would slip through the
-            //   single-entry test above but be caught here.
+            //   This pins the multi-entry projection separately from the single-extra case above:
+            //   it proves the filter operates per-entry across a non-trivial customOrder length and
+            //   does not, for instance, accidentally use the present-set's natural iteration order.
 
             // Given
             Method method = methodOf(CustomOrderTwoEntriesReferencesAbsentType.class, "perform");
 
-            // When / Then
-            assertThatThrownBy(() -> resolver.resolveOrder(method))
-                    .isInstanceOf(InqAnnotationConfigurationException.class)
-                    .hasMessageContaining(CustomOrderTwoEntriesReferencesAbsentType.class.getName())
-                    .hasMessageContaining("customOrder")
-                    .hasMessageContaining("BULKHEAD");
+            // When
+            List<InqElementType> order = resolver.resolveOrder(method);
+
+            // Then
+            assertThat(order).containsExactly(InqElementType.BULKHEAD, InqElementType.RETRY);
         }
 
         @Test
@@ -439,6 +475,35 @@ class OrderingResolverTest {
         }
     }
 
+    static class SharedConstantReuseFixture {
+
+        // Two methods that declare the same customOrder = {BH, CB, RT} verbatim and then select
+        // different subsets of those entries. Java's annotation grammar does not allow an
+        // InqElementType[] static-final reference inside @InqShield(customOrder = ...), so the
+        // array literal is repeated at each call site. The reuse the §3 adjustment enables is
+        // therefore source-level (identical {...} per site) rather than constant-reference-level.
+        @InqShield(customOrder = {
+                InqElementType.BULKHEAD,
+                InqElementType.CIRCUIT_BREAKER,
+                InqElementType.RETRY})
+        @InqBulkhead("bh")
+        @InqRetry("rt")
+        void two() {
+            // selects two of the three customOrder entries
+        }
+
+        @InqShield(customOrder = {
+                InqElementType.BULKHEAD,
+                InqElementType.CIRCUIT_BREAKER,
+                InqElementType.RETRY})
+        @InqBulkhead("bh")
+        @InqCircuitBreaker("cb")
+        @InqRetry("rt")
+        void three() {
+            // selects all three customOrder entries
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Fixtures — class-level input
     // ---------------------------------------------------------------------
@@ -463,10 +528,11 @@ class OrderingResolverTest {
     }
 
     static class CustomOrderReferencesAbsentType {
-        @InqShield(customOrder = {InqElementType.BULKHEAD})
+        @InqShield(customOrder = {InqElementType.RETRY, InqElementType.BULKHEAD})
         @InqRetry("rt")
         void perform() {
-            // customOrder mentions BULKHEAD, but only @InqRetry is on the source
+            // customOrder lists RETRY and BULKHEAD, but only @InqRetry is on the source;
+            // BULKHEAD is silently filtered out per ADR-036 §3.
         }
     }
 
@@ -480,10 +546,16 @@ class OrderingResolverTest {
     }
 
     static class CustomOrderTwoEntriesReferencesAbsentType {
-        @InqShield(customOrder = {InqElementType.BULKHEAD, InqElementType.RETRY})
+        @InqShield(customOrder = {
+                InqElementType.TIME_LIMITER,
+                InqElementType.BULKHEAD,
+                InqElementType.CIRCUIT_BREAKER,
+                InqElementType.RETRY})
+        @InqBulkhead("bh")
         @InqRetry("rt")
         void perform() {
-            // customOrder lists two types but only RETRY is annotated on the source
+            // customOrder lists four types but only BULKHEAD and RETRY are annotated on the
+            // source; TIME_LIMITER and CIRCUIT_BREAKER are silently filtered out per ADR-036 §3.
         }
     }
 
@@ -505,6 +577,7 @@ class OrderingResolverTest {
             AllSixWithResilience4jShield.class,
             CustomSingleRetry.class,
             CustomBulkheadThenRetry.class,
+            SharedConstantReuseFixture.class,
             ClassLevelWithResilience4jShield.class,
             BothOrderAndCustomOrder.class,
             CustomOrderReferencesAbsentType.class,

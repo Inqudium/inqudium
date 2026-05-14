@@ -1,16 +1,7 @@
 package eu.inqudium.annotation.evaluator;
 
-import eu.inqudium.annotation.InqBulkhead;
-import eu.inqudium.annotation.InqCircuitBreaker;
-import eu.inqudium.annotation.InqRateLimiter;
-import eu.inqudium.annotation.InqRetry;
-import eu.inqudium.annotation.InqTimeLimiter;
-import eu.inqudium.annotation.InqTrafficShaper;
-
-import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -31,14 +22,6 @@ import java.util.Optional;
  * @since 0.8.0
  */
 final class DefaultInheritanceResolver implements InheritanceResolver {
-
-    private static final List<Class<? extends Annotation>> RESILIENCE_ELEMENT_ANNOTATIONS = List.of(
-            InqCircuitBreaker.class,
-            InqRetry.class,
-            InqBulkhead.class,
-            InqRateLimiter.class,
-            InqTimeLimiter.class,
-            InqTrafficShaper.class);
 
     private final MethodResolver methodResolver;
 
@@ -96,8 +79,8 @@ final class DefaultInheritanceResolver implements InheritanceResolver {
     }
 
     private static boolean hasResilienceAnnotation(AnnotatedElement element) {
-        for (Class<? extends Annotation> annotationType : RESILIENCE_ELEMENT_ANNOTATIONS) {
-            if (element.isAnnotationPresent(annotationType)) {
+        for (ElementAnnotationDescriptor<?> descriptor : ElementAnnotations.DESCRIPTORS) {
+            if (element.isAnnotationPresent(descriptor.annotationType())) {
                 return true;
             }
         }

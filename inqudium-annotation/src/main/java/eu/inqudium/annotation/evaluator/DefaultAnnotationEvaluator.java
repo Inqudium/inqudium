@@ -1,11 +1,5 @@
 package eu.inqudium.annotation.evaluator;
 
-import eu.inqudium.annotation.InqBulkhead;
-import eu.inqudium.annotation.InqCircuitBreaker;
-import eu.inqudium.annotation.InqRateLimiter;
-import eu.inqudium.annotation.InqRetry;
-import eu.inqudium.annotation.InqTimeLimiter;
-import eu.inqudium.annotation.InqTrafficShaper;
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.pipeline.InqPipeline;
@@ -18,7 +12,6 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
  * Default implementation of {@link AnnotationEvaluator}. Composes the
@@ -28,32 +21,6 @@ import java.util.function.Function;
  * @since 0.8.0
  */
 final class DefaultAnnotationEvaluator implements AnnotationEvaluator {
-
-    /**
-     * Maps each Inqudium element annotation class to the element type it
-     * represents and to a function that extracts the element instance name
-     * from the annotation. The map preserves a deterministic iteration
-     * order so diagnostic messages name annotations in a predictable
-     * sequence.
-     */
-    private static final Map<Class<? extends Annotation>, AnnotationDescriptor<?>> ANNOTATION_DESCRIPTORS;
-
-    static {
-        Map<Class<? extends Annotation>, AnnotationDescriptor<?>> map = new LinkedHashMap<>();
-        map.put(InqCircuitBreaker.class, new AnnotationDescriptor<>(
-                InqCircuitBreaker.class, InqElementType.CIRCUIT_BREAKER, InqCircuitBreaker::value));
-        map.put(InqRetry.class, new AnnotationDescriptor<>(
-                InqRetry.class, InqElementType.RETRY, InqRetry::value));
-        map.put(InqBulkhead.class, new AnnotationDescriptor<>(
-                InqBulkhead.class, InqElementType.BULKHEAD, InqBulkhead::value));
-        map.put(InqRateLimiter.class, new AnnotationDescriptor<>(
-                InqRateLimiter.class, InqElementType.RATE_LIMITER, InqRateLimiter::value));
-        map.put(InqTimeLimiter.class, new AnnotationDescriptor<>(
-                InqTimeLimiter.class, InqElementType.TIME_LIMITER, InqTimeLimiter::value));
-        map.put(InqTrafficShaper.class, new AnnotationDescriptor<>(
-                InqTrafficShaper.class, InqElementType.TRAFFIC_SHAPER, InqTrafficShaper::value));
-        ANNOTATION_DESCRIPTORS = map;
-    }
 
     private final InqPipeline pipeline;
     private final InheritanceResolver inheritanceResolver;
@@ -70,7 +37,7 @@ final class DefaultAnnotationEvaluator implements AnnotationEvaluator {
     }
 
     @Override
-    public EvaluationResult evaluate(Class<?> serviceInterface, Class<?> implementationClass) {
+    public <T> EvaluationResult evaluate(Class<T> serviceInterface, Class<? extends T> implementationClass) {
         if (serviceInterface == null) {
             throw new IllegalArgumentException("serviceInterface must not be null");
         }
@@ -80,6 +47,11 @@ final class DefaultAnnotationEvaluator implements AnnotationEvaluator {
         if (!serviceInterface.isInterface()) {
             throw new IllegalArgumentException(
                     "serviceInterface must be an interface, but was: " + serviceInterface.getName());
+        }
+        if (!serviceInterface.isAssignableFrom(implementationClass)) {
+            throw new IllegalArgumentException(
+                    "implementationClass " + implementationClass.getName()
+                            + " does not implement " + serviceInterface.getName());
         }
 
         Map<Method, MethodPlan> plans = new LinkedHashMap<>();
@@ -139,14 +111,14 @@ final class DefaultAnnotationEvaluator implements AnnotationEvaluator {
             Class<?> serviceInterface, Method interfaceMethod, AnnotatedElement annotatedElement) {
 
         EnumMap<InqElementType, String> result = new EnumMap<>(InqElementType.class);
-        for (AnnotationDescriptor<?> descriptor : ANNOTATION_DESCRIPTORS.values()) {
+        for (ElementAnnotationDescriptor<?> descriptor : ElementAnnotations.DESCRIPTORS) {
             String name = descriptor.readName(annotatedElement);
             if (name == null) {
                 continue;
             }
             requirePipelineHasElement(
-                    serviceInterface, interfaceMethod, descriptor.annotationType, name);
-            result.put(descriptor.elementType, name);
+                    serviceInterface, interfaceMethod, descriptor.annotationType(), name);
+            result.put(descriptor.elementType(), name);
         }
         return result;
     }
@@ -171,23 +143,5 @@ final class DefaultAnnotationEvaluator implements AnnotationEvaluator {
 
     private static String describe(Class<?> serviceInterface, Method interfaceMethod) {
         return serviceInterface.getName() + "#" + interfaceMethod.getName();
-    }
-
-    /**
-     * Holder pairing an annotation type with the element type it represents
-     * and the function that extracts its instance-name attribute.
-     */
-    private record AnnotationDescriptor<A extends Annotation>(
-            Class<A> annotationType,
-            InqElementType elementType,
-            Function<A, String> nameExtractor) {
-
-        String readName(AnnotatedElement annotatedElement) {
-            A annotation = annotatedElement.getAnnotation(annotationType);
-            if (annotation == null) {
-                return null;
-            }
-            return nameExtractor.apply(annotation);
-        }
     }
 }

@@ -27,10 +27,11 @@ public sealed interface MethodPlan {
      * order. The first entry is the outermost wrapping element; the last
      * entry is closest to the method itself.
      *
-     * <p>The list is empty when an annotation source declared
-     * {@code @InqShield} without any resilience-element annotations — a
-     * degenerate but legal configuration that produces a decoration of
-     * length zero.</p>
+     * <p>The list is non-empty whenever the record is produced by
+     * {@link AnnotationEvaluator}. An empty list is possible only when the
+     * record is constructed directly by application code; the
+     * {@code AnnotationEvaluator} itself produces an empty {@code Decorated}
+     * for no annotated source — it produces {@link PassThrough} instead.</p>
      *
      * @param elementNamesOuterToInner the ordered element names, outermost
      *                                 first; defensively copied into an
