@@ -60,10 +60,13 @@
             <artifactId>spring-context</artifactId>
             <scope>compile</scope>
         </dependency>
+        <!-- spring-aop is not directly imported by this module's source, but
+             @EnableAspectJAutoProxy on ResilienceConfig requires the AOP machinery
+             on the runtime classpath to actually create AspectJ-style proxies. -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-aop</artifactId>
-            <scope>compile</scope>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ========================= -->
@@ -72,7 +75,7 @@
         <dependency>
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjrt</artifactId>
-            <scope>compile</scope>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- spring-beans is brought in transitively by spring-context, but Main.java needs

@@ -15,7 +15,6 @@ import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InqExecutor;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.core.time.InqNanoTimeSource;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
@@ -38,10 +37,9 @@ import eu.inqudium.imperative.lifecycle.spi.ImperativePhase;
  * and a strategy-config change triggers an atomic strategy swap on the hot phase (after the
  * mutability check has accepted, per ADR-032).
  *
- * <p>Pipeline contracts (ADR-033). The class implements both the synchronous pipeline
- * contracts ({@link InqExecutor} for one-shot execution and {@link InqDecorator} for deferred
- * wrapper construction) and the asynchronous pipeline contract ({@link InqAsyncDecorator})
- * directly: their default methods all reduce to either
+ * <p>Pipeline contracts (ADR-033). The class implements the synchronous pipeline contract
+ * ({@link InqDecorator} for deferred wrapper construction) and the asynchronous pipeline
+ * contract ({@link InqAsyncDecorator}) directly: their default methods all reduce to either
  * {@link LayerAction#execute LayerAction.execute(...)} (sync) or
  * {@link eu.inqudium.imperative.core.pipeline.AsyncLayerAction#executeAsync
  * AsyncLayerAction.executeAsync(...)} (async), which the lifecycle base class fulfils via
@@ -67,7 +65,6 @@ import eu.inqudium.imperative.lifecycle.spi.ImperativePhase;
 public final class InqBulkhead<A, R>
         extends ImperativeLifecyclePhasedComponent<BulkheadSnapshot, A, R>
         implements BulkheadHandle<ImperativeTag>,
-                   InqExecutor<A, R>,
                    InqDecorator<A, R>,
                    InqAsyncDecorator<A, R> {
 

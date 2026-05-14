@@ -5,6 +5,8 @@ import eu.inqudium.core.pipeline.Wrapper;
 import eu.inqudium.core.pipeline.proxy.InqProxyFactory;
 import eu.inqudium.core.pipeline.proxy.ProxyWrapper;
 import eu.inqudium.core.pipeline.proxy.SyncDispatchExtension;
+import eu.inqudium.imperative.core.pipeline.proxy.AsyncDispatchExtension;
+import eu.inqudium.imperative.core.pipeline.proxy.InqAsyncProxyFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

@@ -328,3 +328,9 @@ don't accumulate cruft.
 Both contributions are real. The asymmetry is healthy: review work and implementation
 work want different attention shapes, and trying to do both in a single session
 degrades both. The maintainer's choice to split them is the workflow's foundation.
+
+## Project tooling and versions
+
+- java version 21
+- kotlin version 2.3.20
+- maven version 3.9.15

@@ -2,6 +2,7 @@ package eu.inqudium.imperative.core.pipeline;
 
 import eu.inqudium.core.pipeline.Wrapper;
 import eu.inqudium.core.pipeline.proxy.InqProxyFactory;
+import eu.inqudium.imperative.core.pipeline.proxy.InqAsyncProxyFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

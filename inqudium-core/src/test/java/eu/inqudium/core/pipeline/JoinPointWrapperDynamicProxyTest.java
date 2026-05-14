@@ -1,5 +1,6 @@
 package eu.inqudium.core.pipeline;
 
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

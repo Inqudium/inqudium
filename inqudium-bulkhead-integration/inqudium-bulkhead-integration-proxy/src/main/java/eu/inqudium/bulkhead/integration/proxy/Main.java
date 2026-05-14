@@ -1,103 +1,230 @@
 package eu.inqudium.bulkhead.integration.proxy;
 
+import eu.inqudium.config.event.ComponentBecameHotEvent;
+import eu.inqudium.config.event.RuntimeComponentAddedEvent;
+import eu.inqudium.config.event.RuntimeComponentPatchedEvent;
+import eu.inqudium.config.event.RuntimeComponentRemovedEvent;
+import eu.inqudium.config.event.RuntimeComponentVetoedEvent;
 import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.core.element.bulkhead.InqBulkheadFullException;
+import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqPipeline;
+import eu.inqudium.core.pipeline.Wrapper;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
-import eu.inqudium.imperative.core.pipeline.InqAsyncProxyFactory;
+import eu.inqudium.imperative.core.pipeline.proxy.InqAsyncProxyFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
+import java.util.stream.Collectors;
 
 /**
- * End-to-end demonstration of the proxy-based integration style.
+ * End-to-end demonstration of the proxy-based integration style with practice-grade logging
+ * and a runtime-configuration-change demo.
  *
- * <p>The flow follows the natural structure of a proxy-based application:
+ * <p>The flow follows the natural structure of a proxy-based application that takes
+ * operability seriously:
  * <ol>
- *   <li>build an {@link InqRuntime} via the DSL,</li>
- *   <li>obtain the bulkhead handle from the runtime's imperative paradigm container,</li>
- *   <li>compose an {@link InqPipeline} containing the bulkhead and lift it through
- *       {@link InqAsyncProxyFactory#of(InqPipeline)},</li>
- *   <li>call {@code factory.protect(OrderService.class, new DefaultOrderService())} to
- *       obtain a proxy that implements {@link OrderService}; method calls on the proxy are
- *       routed transparently through the pipeline.</li>
+ *   <li>build an {@link InqRuntime} via {@link BulkheadConfig#newRuntime()},</li>
+ *   <li>install a bootstrap-side lifecycle-event subscriber on the runtime's event publisher
+ *       so topology changes (added / patched / removed / vetoed / became-hot) appear in the
+ *       log,</li>
+ *   <li>compose an {@link InqPipeline} containing the bulkhead, lift it through
+ *       {@link InqAsyncProxyFactory#of(InqPipeline)}, and {@code protect(...)} a
+ *       {@link DefaultOrderService} instance — that constructor pulls the bulkhead from the
+ *       runtime and subscribes per-component bulkhead-event handlers,</li>
+ *   <li>log topology lines for every method on the {@link OrderService} interface — all
+ *       four routes through the same proxy share one {@code chainId},</li>
+ *   <li>build {@link AdminService} — the operator surface for the runtime patch demo,</li>
+ *   <li>run the three-phase demo: normal operation → sell promotion (patched) → after
+ *       promotion (patched back).</li>
  * </ol>
  *
- * <p>The decisive structural difference from the function-based example: here the bulkhead's
- * placement is invisible at every call site. The {@code service} reference held by the demo
- * code is an {@link OrderService}, indistinguishable from a plain implementation; callers do
- * not see {@code decorateFunction(...)} or {@code decorateAsyncFunction(...)} sprinkled
- * around the call site. The {@link InqAsyncProxyFactory#of(InqPipeline)} factory wires two
- * dispatch extensions behind one proxy — the async extension claims methods that return
- * {@link CompletionStage} via its {@code canHandle}, the sync catch-all extension claims
- * everything else — so a single bulkhead instance protects both shapes through one proxy.
+ * <p>Decision deviation from sub-step&nbsp;6.C decision&nbsp;3 (topology logging in the
+ * service): the proxy idiom builds the proxy externally — the {@link OrderService} interface
+ * cannot self-log topology, and putting topology logging in {@link DefaultOrderService} would
+ * violate the proxy pattern's principle that the implementation knows nothing about being
+ * proxied. Topology logging therefore lives here in {@link Main}, immediately after the proxy
+ * is constructed.
  */
 public final class Main {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
     private Main() {
         // entry point only
     }
 
     public static void main(String[] args) {
-        // The runtime owns every Inqudium component for the duration of the application.
-        // Try-with-resources guarantees a clean shutdown — paradigm containers close,
-        // strategies tear down, the runtime-scoped event publisher releases.
         try (InqRuntime runtime = BulkheadConfig.newRuntime()) {
-            InqBulkhead<Object, Object> bulkhead = orderBulkhead(runtime);
+            subscribeLifecycleEvents(runtime.general().eventPublisher());
 
-            // Headline shape of the proxy-based pattern: build a pipeline holding the
-            // bulkhead, lift it through the hybrid factory, and protect the implementation
-            // behind a JDK dynamic proxy. The variable below is typed as OrderService —
-            // the proxy is transparent: it can be passed anywhere an OrderService is
-            // expected, and the caller does not need to know the service is decorated.
+            InqBulkhead<Object, Object> bulkhead = orderBulkhead(runtime);
             InqPipeline pipeline = InqPipeline.builder()
                     .shield(bulkhead)
                     .build();
             OrderService service = InqAsyncProxyFactory.of(pipeline)
-                    .protect(OrderService.class, new DefaultOrderService());
+                    .protect(OrderService.class, new DefaultOrderService(runtime));
 
-            System.out.println("=== Sync demo ===");
-            runSyncDemo(service);
+            // Topology logging — happens once per service method. The proxy implements both
+            // OrderService and Wrapper, so the cast is safe (ProxyWrapper.createProxy adds
+            // Wrapper.class to the implemented-interfaces array). The pipeline's elements are
+            // read directly to surface the bulkhead's element-type and name; the proxy's own
+            // layerDescription would only return "InqHybridPipelineProxy" — the wrapper-layer
+            // name, not the pipeline content.
+            logTopology(pipeline, (Wrapper<?>) service);
 
-            System.out.println("=== Async demo ===");
-            runAsyncDemo(service);
+            AdminService admin = new AdminService(runtime);
+
+            phase1NormalOperation(runtime, service);
+            phase2SellPromotion(service, admin);
+            phase3AfterPromotion(runtime, service, admin);
         }
     }
 
     /**
-     * Synchronous half of the demo: call the proxied service's sync methods directly. The
-     * proxy routes each invocation through the sync pipeline chain — the bulkhead acquires
-     * a permit, the implementation runs, the permit is released in the chain's finally
-     * block.
+     * Phase 1: balanced/2 permits. Two normal calls succeed; saturation with two holders +
+     * one extra rejects the third call synchronously with
+     * {@link InqBulkheadFullException}.
      */
-    private static void runSyncDemo(OrderService service) {
-        // Plain method calls on a plain OrderService reference. Compare to the
-        // function-based example, where every call site holds a separately-built
-        // Function<String, String> — the proxy makes that wrapping invisible.
+    private static void phase1NormalOperation(InqRuntime runtime, OrderService service) {
+        System.out.println();
+        System.out.println("=== Phase 1: Normal operation (balanced/2) ===");
+
         System.out.println(service.placeOrder("Widget"));
         System.out.println(service.placeOrder("Sprocket"));
-        System.out.println(service.placeOrder("Gadget"));
-
-        demonstrateSyncSaturation(service);
+        demonstrateSaturation(runtime, service, 2);
     }
 
     /**
-     * Asynchronous half of the demo: call the proxied service's async methods directly. The
-     * proxy reads {@link OrderService#placeOrderAsync}'s {@link CompletionStage} return type
-     * and routes the invocation through the async pipeline chain; the same bulkhead instance
-     * the sync demo just exercised serves the async path through one terminal.
+     * Phase 2: patch to permissive/50, then demonstrate that 5 concurrent holders all succeed
+     * — none rejected. Releases all holders cleanly before returning.
      */
-    private static void runAsyncDemo(OrderService service) {
-        // Each invocation returns an already-complete stage (the implementation's body
-        // synchronously produces its value). join() reads the stage's value and confirms
-        // the permit has returned to the pool by the time we move on.
-        System.out.println(service.placeOrderAsync("Apple").toCompletableFuture().join());
-        System.out.println(service.placeOrderAsync("Banana").toCompletableFuture().join());
-        System.out.println(service.placeOrderAsync("Cherry").toCompletableFuture().join());
+    private static void phase2SellPromotion(OrderService service, AdminService admin) {
+        System.out.println();
+        System.out.println("=== Phase 2: Sell promotion (permissive/50) ===");
 
-        demonstrateAsyncSaturation(service);
+        admin.startSellPromotion();
+        runFiveConcurrentHolders(service);
+    }
+
+    /**
+     * Phase 3: patch back to balanced/2 and re-run the saturation pattern from phase 1. The
+     * third call is rejected again — proof the patch reversed cleanly.
+     */
+    private static void phase3AfterPromotion(InqRuntime runtime, OrderService service,
+                                             AdminService admin) {
+        System.out.println();
+        System.out.println("=== Phase 3: After promotion (balanced/2) ===");
+
+        admin.endSellPromotion();
+        demonstrateSaturation(runtime, service, 2);
+    }
+
+    /**
+     * Log one topology line per service-interface method. All four methods route through the
+     * same proxy — the format is
+     * {@code "{methodName} protected by {layers} (chain-id {N})"} where {@code {layers}}
+     * is the comma-joined element-description list from {@link InqPipeline#elements()}
+     * formatted as {@code ELEMENT_TYPE(name)}. A reader inspecting the log sees four lines
+     * that share one {@code chain-id}, accurately reflecting the proxy pattern's "all methods
+     * on this proxy share one protection topology".
+     */
+    private static void logTopology(InqPipeline pipeline, Wrapper<?> proxy) {
+        String layers = pipeline.elements().stream()
+                .map(e -> e.elementType() + "(" + e.name() + ")")
+                .collect(Collectors.joining(", "));
+        long chainId = proxy.chainId();
+        for (Method m : OrderService.class.getDeclaredMethods()) {
+            LOG.info("{} protected by {} (chain-id {})",
+                    m.getName(), layers, chainId);
+        }
+    }
+
+    /**
+     * Subscribe handlers for the five runtime-lifecycle event types. Levels follow sub-step
+     * 6.D decision&nbsp;4: INFO for the four "normal" lifecycle events, WARN for vetoes
+     * (a policy rejection is louder than a routine topology change).
+     */
+    private static void subscribeLifecycleEvents(InqEventPublisher publisher) {
+        publisher.onEvent(ComponentBecameHotEvent.class, e ->
+                LOG.info("Component became hot: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentAddedEvent.class, e ->
+                LOG.info("Runtime component added: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentPatchedEvent.class, e ->
+                LOG.info("Runtime component patched: '{}' ({}) — touched {}",
+                        e.getElementName(), e.getElementType(), e.touchedFields()));
+        publisher.onEvent(RuntimeComponentRemovedEvent.class, e ->
+                LOG.info("Runtime component removed: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentVetoedEvent.class, e ->
+                LOG.warn("Runtime component vetoed: '{}' ({}) — finding {}",
+                        e.getElementName(), e.getElementType(), e.vetoFinding()));
+    }
+
+    /**
+     * Saturate the bulkhead with {@code limit} virtual-thread holders, attempt one extra call
+     * from the main thread, and observe synchronous rejection. Used by phases 1 and 3.
+     */
+    private static void demonstrateSaturation(InqRuntime runtime, OrderService service,
+                                              int limit) {
+        InqBulkhead<?, ?> bulkhead = orderBulkhead(runtime);
+
+        CountDownLatch[] acquired = new CountDownLatch[limit];
+        CountDownLatch release = new CountDownLatch(1);
+        Thread[] holders = new Thread[limit];
+        for (int i = 0; i < limit; i++) {
+            acquired[i] = new CountDownLatch(1);
+            CountDownLatch acq = acquired[i];
+            holders[i] = Thread.startVirtualThread(() -> service.placeOrderHolding(acq, release));
+        }
+
+        try {
+            for (CountDownLatch a : acquired) {
+                a.await();
+            }
+
+            System.out.println("available permits while saturated: " + bulkhead.availablePermits());
+            try {
+                service.placeOrder("Saturated");
+                System.out.println("unexpected: extra call returned");
+            } catch (InqBulkheadFullException rejected) {
+                System.out.println("extra call rejected: " + rejected.getRejectionReason());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            release.countDown();
+            for (Thread t : holders) {
+                joinQuietly(t);
+            }
+        }
+    }
+
+    /**
+     * Five concurrent async holders — exercises the post-patch capacity (50 permits). All five
+     * succeed; no rejection. The async holding shape needs no "acquired" latch because the
+     * bulkhead acquires synchronously on the calling thread.
+     */
+    private static void runFiveConcurrentHolders(OrderService service) {
+        CompletableFuture<Void> release = new CompletableFuture<>();
+        @SuppressWarnings("unchecked")
+        CompletionStage<String>[] holders = new CompletionStage[5];
+        for (int i = 0; i < 5; i++) {
+            holders[i] = service.placeOrderHoldingAsync(release);
+        }
+
+        System.out.println("five concurrent async holders accepted under permissive/50");
+
+        release.complete(null);
+        for (CompletionStage<String> h : holders) {
+            System.out.println(h.toCompletableFuture().join());
+        }
     }
 
     /**
@@ -113,88 +240,6 @@ public final class Main {
     private static InqBulkhead<Object, Object> orderBulkhead(InqRuntime runtime) {
         return (InqBulkhead<Object, Object>) runtime.imperative()
                 .bulkhead(BulkheadConfig.BULKHEAD_NAME);
-    }
-
-    /**
-     * Saturate the bulkhead with two virtual-thread holders, attempt a third call from the
-     * main thread, and observe the rejection. The pattern mirrors the function-based
-     * example's saturation flow — the surface is the proxied {@link OrderService} reference
-     * rather than a hand-wrapped {@code Function}, but the rejection contract is identical.
-     */
-    private static void demonstrateSyncSaturation(OrderService service) {
-        CountDownLatch holderAcquired1 = new CountDownLatch(1);
-        CountDownLatch holderAcquired2 = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-
-        Thread holder1 = Thread.startVirtualThread(() ->
-                service.placeOrderHolding(holderAcquired1, release));
-        Thread holder2 = Thread.startVirtualThread(() ->
-                service.placeOrderHolding(holderAcquired2, release));
-
-        try {
-            holderAcquired1.await();
-            holderAcquired2.await();
-
-            try {
-                service.placeOrder("Saturated");
-                System.out.println("unexpected: third sync call returned");
-            } catch (InqBulkheadFullException rejected) {
-                System.out.println("third sync call rejected: " + rejected.getRejectionReason());
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } finally {
-            release.countDown();
-            joinQuietly(holder1);
-            joinQuietly(holder2);
-        }
-    }
-
-    /**
-     * Async-path saturation. Two holders consume both permits by invoking the proxied
-     * async-holding method with a release future that has not yet completed; a third
-     * invocation is rejected with {@link InqBulkheadFullException}.
-     *
-     * <p>Channel difference vs. the function-based example: the hybrid proxy's async
-     * dispatch path implements a documented <em>uniform error channel</em> — any exception
-     * thrown synchronously by a pipeline element (including the bulkhead's
-     * {@code InqBulkheadFullException}) is captured into a failed {@link CompletionStage}
-     * rather than thrown to the caller. The rejection itself is identical; only the surface
-     * through which it reaches the caller is different. The function-based decoration path
-     * lets the throw propagate; the proxy normalizes it for callers that always expect a
-     * stage on async-typed methods.
-     *
-     * <p>One structural detail that differs from the sync saturation:
-     * <ul>
-     *   <li>No "acquired" latch is needed. The async path acquires its permit synchronously
-     *       on the calling thread, so by the time the proxied method returns its still-
-     *       pending stage the permit is already held.</li>
-     * </ul>
-     */
-    private static void demonstrateAsyncSaturation(OrderService service) {
-        CompletableFuture<Void> release = new CompletableFuture<>();
-        CompletionStage<String> holder1 = service.placeOrderHoldingAsync(release);
-        CompletionStage<String> holder2 = service.placeOrderHoldingAsync(release);
-
-        try {
-            CompletionStage<String> third = service.placeOrderAsync("Saturated");
-            try {
-                third.toCompletableFuture().join();
-                System.out.println("unexpected: third async call produced a value");
-            } catch (CompletionException ce) {
-                Throwable cause = ce.getCause();
-                if (cause instanceof InqBulkheadFullException rejected) {
-                    System.out.println("third async call rejected: "
-                            + rejected.getRejectionReason() + " (failed stage)");
-                } else {
-                    System.out.println("unexpected cause: " + cause);
-                }
-            }
-        } finally {
-            release.complete(null);
-            holder1.toCompletableFuture().join();
-            holder2.toCompletableFuture().join();
-        }
     }
 
     private static void joinQuietly(Thread t) {

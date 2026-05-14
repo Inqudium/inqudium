@@ -2,7 +2,7 @@ package eu.inqudium.aspect.pipeline.example;
 
 import eu.inqudium.aspect.pipeline.AbstractPipelineAspect;
 import eu.inqudium.aspect.pipeline.AspectLayerProvider;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;

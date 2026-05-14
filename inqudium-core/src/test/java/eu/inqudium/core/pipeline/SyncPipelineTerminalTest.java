@@ -3,6 +3,7 @@ package eu.inqudium.core.pipeline;
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

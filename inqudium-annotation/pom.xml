@@ -18,10 +18,10 @@
     </description>
 
     <!--
-      This module has NO dependencies — not on inqudium-core, not on Spring,
-      not on AspectJ. This is intentional: service code that uses
-      @InqCircuitBreaker or @InqRetry should compile with only this tiny
-      JAR on the classpath.
+      This module depends only on inqudium-core for the InqElementType enum
+      referenced by @InqShield#customOrder. No Spring, no AspectJ. Service
+      code that uses @InqCircuitBreaker or @InqRetry compiles with only the
+      annotation module and inqudium-core on the classpath.
 
       The runtime infrastructure (annotation scanning, pipeline building,
       AOP integration) lives in separate modules:
@@ -29,6 +29,12 @@
         - inqudium-aspect:     AspectJ integration
         - inqudium-spring:     Spring AOP integration
     -->
-
+    <dependencies>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-core</artifactId>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
 
 </project>

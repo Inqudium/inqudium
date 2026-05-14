@@ -2,12 +2,20 @@ package eu.inqudium.bulkhead.integration.aspectj;
 
 import eu.inqudium.aspect.pipeline.HybridAspectPipelineTerminal;
 import eu.inqudium.config.runtime.InqRuntime;
+import eu.inqudium.core.element.bulkhead.event.BulkheadOnAcquireEvent;
+import eu.inqudium.core.element.bulkhead.event.BulkheadOnRejectEvent;
+import eu.inqudium.core.element.bulkhead.event.BulkheadOnReleaseEvent;
+import eu.inqudium.core.element.bulkhead.event.BulkheadRollbackTraceEvent;
 import eu.inqudium.core.pipeline.InqPipeline;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -50,9 +58,33 @@ import java.util.concurrent.ConcurrentMap;
  * aspect extended the sync base class. {@link HybridAspectPipelineTerminal} is the supported
  * hybrid surface: one composed pipeline, sync/async dispatch by return type, both halves
  * sharing one permit pool. Its Javadoc shows the exact pattern used here.
+ *
+ * <h3>Logging responsibilities</h3>
+ * <p>Two operability concerns live in this aspect (sub-step&nbsp;6.E of
+ * {@code REFACTORING_BULKHEAD_LOGGING_AND_RUNTIME_CONFIG.md}):
+ * <ul>
+ *   <li><b>Bulkhead-event subscription.</b> The constructor subscribes per-component
+ *       handlers on the bulkhead's event publisher — TRACE for acquire/release, WARN for
+ *       reject, ERROR for rollback. The aspect is the natural locus: it owns the runtime
+ *       and the bulkhead handle. The function-based example does this in {@code OrderService};
+ *       the proxy-based example does it in {@code DefaultOrderService}; the AspectJ idiom
+ *       keeps the service plain and lifts the subscription into the aspect that already
+ *       holds every reference it needs.</li>
+ *   <li><b>Once-per-method topology logging.</b> The aspect knows the bulkhead and the
+ *       chain-id, but not which methods its pointcut will eventually match — pointcut
+ *       resolution is lazy, at the first join-point hit per method. A
+ *       {@link ConcurrentHashMap} therefore gates a one-shot topology log per
+ *       {@link Method}; topology lines appear spread across the early demo runtime rather
+ *       than all at once before phase 1 starts. This is the structural deviation from the
+ *       plan's decision&nbsp;3 (topology logged in {@code OrderService}'s constructor) that
+ *       the AspectJ idiom forces — the service is plain Java with no reference to the
+ *       aspect, so it cannot log topology itself.</li>
+ * </ul>
  */
 @Aspect
 public class OrderBulkheadAspect {
+
+    private static final Logger LOG = LoggerFactory.getLogger(OrderBulkheadAspect.class);
 
     private final InqRuntime runtime;
 
@@ -95,15 +127,25 @@ public class OrderBulkheadAspect {
             new ConcurrentHashMap<>();
 
     /**
+     * Once-per-method gate for topology logging. The first join-point hit per
+     * {@link Method} writes one log line; subsequent hits read the cached
+     * {@link Boolean#TRUE} and skip. Used in {@link #logTopologyOnce(Method,
+     * HybridAspectPipelineTerminal)}.
+     */
+    private final ConcurrentMap<Method, Boolean> loggedMethods = new ConcurrentHashMap<>();
+
+    /**
      * Production constructor — invoked by AspectJ when {@code aspectOf()} is first called.
      *
-     * <p>Allocates the runtime that the rest of the aspect's lookups draw from. The
-     * pipeline-and-terminal construction happens lazily on first invocation per bulkhead
-     * name (see {@link #terminalFor}), so a name that never matches any annotation never
-     * pays for its terminal, and a name that matches many invocations pays exactly once.
+     * <p>Allocates the runtime that the rest of the aspect's lookups draw from and subscribes
+     * the four bulkhead-event handlers on the example's bulkhead. The pipeline-and-terminal
+     * construction happens lazily on first invocation per bulkhead name (see
+     * {@link #terminalFor}), so a name that never matches any annotation never pays for its
+     * terminal, and a name that matches many invocations pays exactly once.
      */
     public OrderBulkheadAspect() {
         this.runtime = BulkheadConfig.newRuntime();
+        subscribeBulkheadEvents(orderBulkhead());
     }
 
     /**
@@ -128,6 +170,11 @@ public class OrderBulkheadAspect {
      * the caller, once at the callee). Restricting to {@code execution} attaches the advice
      * exactly once to the method body, regardless of where the caller lives.
      *
+     * <p>Before delegating to the terminal, the advice records a one-shot topology line per
+     * {@link Method} so a reader of the log timeline can correlate later bulkhead-event
+     * lines with the topology that produced them. See {@link #logTopologyOnce} for the
+     * once-filter rationale.
+     *
      * @param pjp         the proceeding join point provided by AspectJ
      * @param inqBulkhead the {@code @InqBulkhead} annotation instance attached to the woven
      *                    method; its {@code value()} names the bulkhead to dispatch through
@@ -137,7 +184,10 @@ public class OrderBulkheadAspect {
     @Around("execution(* *(..)) && @annotation(inqBulkhead)")
     public Object aroundInqBulkhead(ProceedingJoinPoint pjp,
                                     eu.inqudium.annotation.InqBulkhead inqBulkhead) throws Throwable {
-        return terminalFor(inqBulkhead.value()).executeAround(pjp);
+        HybridAspectPipelineTerminal terminal = terminalFor(inqBulkhead.value());
+        Method method = ((MethodSignature) pjp.getSignature()).getMethod();
+        logTopologyOnce(method, terminal);
+        return terminal.executeAround(pjp);
     }
 
     /**
@@ -156,10 +206,8 @@ public class OrderBulkheadAspect {
      * spares callers a cast at every read site; the cast is safe because the runtime
      * registry stores the same instance under both views.
      */
-    @SuppressWarnings("unchecked")
     public InqBulkhead<Object, Object> bulkhead() {
-        return (InqBulkhead<Object, Object>) runtime.imperative()
-                .bulkhead(BulkheadConfig.BULKHEAD_NAME);
+        return orderBulkhead();
     }
 
     /**
@@ -181,5 +229,66 @@ public class OrderBulkheadAspect {
             return HybridAspectPipelineTerminal.of(
                     InqPipeline.builder().shield(bh).build());
         });
+    }
+
+    /**
+     * Log one topology line the first time a given {@link Method} is advised, then never
+     * again for that method.
+     *
+     * <p>AspectJ pointcut resolution is lazy: at construction time the aspect does not know
+     * which classes' methods its pointcut will match. The set of advised methods is only
+     * fully observable after the application's traffic has flowed through every method at
+     * least once. This is the structural difference from the function-based example, which
+     * logs all four topology lines from the {@code OrderService} constructor up-front, and
+     * from the proxy-based example, which logs them in {@code Main} immediately after the
+     * proxy is built. The AspectJ idiom logs them spread across the early runtime — phase 1's
+     * first {@code placeOrder} call produces the {@code placeOrder} topology line; the
+     * saturation pattern produces the {@code placeOrderHolding} line; phase 2's first async
+     * call produces {@code placeOrderHoldingAsync}; and so on. Once every advised method has
+     * been hit at least once, no further topology lines are emitted.
+     *
+     * <p>Format matches the function-based and proxy-based examples verbatim: {@code
+     * "{methodName} protected by {layers} (chain-id {N})"} where {@code {layers}} is the
+     * comma-joined list of {@code ELEMENT_TYPE(name)} entries from the terminal's pipeline,
+     * and {@code N} is the terminal's chain-id (one chain-id per terminal — every method
+     * that routes through the same terminal logs the same chain-id, which mirrors the proxy
+     * pattern's "all methods on this proxy share one chain-id" property).
+     */
+    private void logTopologyOnce(Method method, HybridAspectPipelineTerminal terminal) {
+        loggedMethods.computeIfAbsent(method, m -> {
+            String layers = String.join(", ", terminal.layerNames());
+            LOG.info("{} protected by {} (chain-id {})",
+                    m.getName(), layers, terminal.chainId());
+            return Boolean.TRUE;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private InqBulkhead<Object, Object> orderBulkhead() {
+        return (InqBulkhead<Object, Object>) runtime.imperative()
+                .bulkhead(BulkheadConfig.BULKHEAD_NAME);
+    }
+
+    /**
+     * Subscribe handlers for the four bulkhead event types this example opts into via
+     * {@link BulkheadConfig}. Levels follow sub-step&nbsp;6.E decision&nbsp;2: TRACE for the
+     * routine acquire/release pair, WARN for rejection (a back-pressure signal callers care
+     * about), ERROR for rollback (a library-internal anomaly that should never occur on a
+     * healthy bulkhead).
+     */
+    private static void subscribeBulkheadEvents(InqBulkhead<?, ?> bulkhead) {
+        var publisher = bulkhead.eventPublisher();
+        publisher.onEvent(BulkheadOnAcquireEvent.class, e ->
+                LOG.trace("Permit acquired on bulkhead '{}' (chain-id {}, call-id {}, concurrent {})",
+                        e.getElementName(), e.getChainId(), e.getCallId(), e.getConcurrentCalls()));
+        publisher.onEvent(BulkheadOnReleaseEvent.class, e ->
+                LOG.trace("Permit released on bulkhead '{}' (chain-id {}, call-id {}, concurrent {})",
+                        e.getElementName(), e.getChainId(), e.getCallId(), e.getConcurrentCalls()));
+        publisher.onEvent(BulkheadOnRejectEvent.class, e ->
+                LOG.warn("Permit rejected on bulkhead '{}' (chain-id {}, call-id {}, reason {})",
+                        e.getElementName(), e.getChainId(), e.getCallId(), e.getRejectionReason()));
+        publisher.onEvent(BulkheadRollbackTraceEvent.class, e ->
+                LOG.error("Permit rolled back on bulkhead '{}' (chain-id {}, call-id {}, cause {})",
+                        e.getElementName(), e.getChainId(), e.getCallId(), e.getErrorType()));
     }
 }

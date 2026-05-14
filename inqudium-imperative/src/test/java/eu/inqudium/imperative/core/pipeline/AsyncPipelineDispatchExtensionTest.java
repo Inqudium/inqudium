@@ -7,6 +7,8 @@ import eu.inqudium.core.pipeline.proxy.DispatchExtension;
 import eu.inqudium.core.pipeline.proxy.MethodHandleCache;
 import eu.inqudium.core.pipeline.proxy.PipelineDispatchExtension;
 import eu.inqudium.core.pipeline.proxy.ProxyWrapper;
+import eu.inqudium.imperative.core.pipeline.proxy.AsyncDispatchExtension;
+import eu.inqudium.imperative.core.pipeline.proxy.AsyncPipelineDispatchExtension;
 import org.junit.jupiter.api.DisplayNameGeneration;
 import org.junit.jupiter.api.DisplayNameGenerator;
 import org.junit.jupiter.api.Nested;

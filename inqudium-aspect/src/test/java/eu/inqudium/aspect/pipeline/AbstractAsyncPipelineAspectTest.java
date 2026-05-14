@@ -1,6 +1,6 @@
 package eu.inqudium.aspect.pipeline;
 
-import eu.inqudium.imperative.core.pipeline.AsyncJoinPointWrapper;
+import eu.inqudium.imperative.core.pipeline.function.AsyncJoinPointWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

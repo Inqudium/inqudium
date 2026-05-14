@@ -2,7 +2,12 @@ package eu.inqudium.imperative.core.pipeline;
 
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.imperative.core.pipeline.function.AsyncCallableWrapper;
+import eu.inqudium.imperative.core.pipeline.function.AsyncFunctionWrapper;
+import eu.inqudium.imperative.core.pipeline.function.AsyncJoinPointWrapper;
+import eu.inqudium.imperative.core.pipeline.function.AsyncRunnableWrapper;
+import eu.inqudium.imperative.core.pipeline.function.AsyncSupplierWrapper;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;

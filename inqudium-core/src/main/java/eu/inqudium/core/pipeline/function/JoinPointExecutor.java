@@ -1,4 +1,4 @@
-package eu.inqudium.core.pipeline;
+package eu.inqudium.core.pipeline.function;
 
 /**
  * Functional interface representing a proxy execution point, such as a Spring AOP

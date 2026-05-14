@@ -3,6 +3,7 @@ package eu.inqudium.imperative.core.pipeline;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.proxy.ProxyWrapper;
 import eu.inqudium.core.pipeline.proxy.SyncDispatchExtension;
+import eu.inqudium.imperative.core.pipeline.proxy.AsyncDispatchExtension;
 import org.junit.jupiter.api.DisplayNameGeneration;
 import org.junit.jupiter.api.DisplayNameGenerator;
 import org.junit.jupiter.api.Nested;

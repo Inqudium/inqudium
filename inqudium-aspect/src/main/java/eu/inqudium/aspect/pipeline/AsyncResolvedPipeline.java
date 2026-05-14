@@ -1,6 +1,6 @@
 package eu.inqudium.aspect.pipeline;
 
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;

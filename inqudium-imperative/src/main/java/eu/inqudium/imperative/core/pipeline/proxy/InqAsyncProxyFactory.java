@@ -1,4 +1,4 @@
-package eu.inqudium.imperative.core.pipeline;
+package eu.inqudium.imperative.core.pipeline.proxy;
 
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
@@ -8,6 +8,8 @@ import eu.inqudium.core.pipeline.proxy.InqProxyFactory;
 import eu.inqudium.core.pipeline.proxy.PipelineDispatchExtension;
 import eu.inqudium.core.pipeline.proxy.ProxyWrapper;
 import eu.inqudium.core.pipeline.proxy.SyncDispatchExtension;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
+import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 
 import java.util.concurrent.CompletionStage;
 

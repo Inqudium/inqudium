@@ -1,7 +1,11 @@
-package eu.inqudium.imperative.core.pipeline;
+package eu.inqudium.imperative.core.pipeline.function;
 
-import eu.inqudium.core.pipeline.JoinPointExecutor;
-import eu.inqudium.core.pipeline.JoinPointWrapper;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointWrapper;
+import eu.inqudium.imperative.core.pipeline.AsyncBaseWrapper;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
+import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
+import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
 
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;

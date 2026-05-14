@@ -2,6 +2,12 @@
 
 This file is read automatically by Claude Code when it starts in this repository. It captures project conventions, the module layout, and the current working context so Claude doesn't have to rediscover them on every session.
 
+## Project tooling and versions
+
+- java version 21 
+- kotlin version 2.3.20
+- maven version 3.9.15
+
 ## Project overview
 
 Inqudium is a multi-paradigm Java resilience library. It provides the same resilience elements — Circuit Breaker, Retry, Rate Limiter, Bulkhead, Time Limiter, Traffic Shaper — across four execution models:
@@ -40,23 +46,7 @@ These hold regardless of which module is being touched:
 - **Injectable time.** Use `InqNanoTimeSource` for monotonic time (metrics, deadlines) and `InqClock` for wall-clock time (log timestamps, event metadata). Tests inject deterministic sources — never `Thread.sleep` or `System.nanoTime()` directly in tests.
 - **Functional decoration as the primary API.** Elements decorate `Supplier<T>`, `Runnable`, `Function<T,R>`, `CompletionStage<T>`. Annotation-based `@InqShield` is a convenience layer on top, not a separate execution path.
 - **First-registration-wins registries.** Registries never overwrite an existing instance; the provided config is ignored if the name is already present.
-
-## Code-first, ADR-second
-
-**The code is authoritative. ADRs must follow the code, not the other way around.**
-
-Several ADRs have drifted from the implementation over time. Before editing an ADR, always inspect the current code and let it dictate what the ADR should say. An active inconsistency catalog lives in `docs/adr/_refactor-notes.md` (or equivalent path — create one if it isn't there yet) and can be used as the work plan for ADR revisions.
-
-Known drift hotspots as of the last review:
-
-- **ADR-022** (`InqCall` / call identity) — describes a `String callId` / `InqCall<T>` record that doesn't match the `long chainId` + `long callId` + `InternalExecutor` model actually in the code.
-- **ADR-016** (sliding window) — the real interface is `FailureMetrics` with several strategy implementations, not a `SlidingWindow` with two implementations.
-- **ADR-017, ADR-021, ADR-024** — reference a `CACHE` element that doesn't exist in `InqElementType`; `TRAFFIC_SHAPER` exists but isn't documented as an element in any ADR.
-- **ADR-015** — the `InqRegistry` interface in code lacks the template methods (`addConfiguration`, `get(name, configName)`) and `remove`/`clear` that the ADR describes.
-- **ADR-010** — forbids synchronous Callable + `Thread.interrupt`, but the imperative Time Limiter does exactly that via a virtual thread and `cancelOnTimeout`.
-- **ADR-018** — the real `RetryConfig` and backoff strategies diverge significantly from the ADR; a second DSL `RetryConfig` record exists alongside the primary one.
-
-When in doubt about any ADR statement, verify against the code before trusting it.
+- **Injectable time.** Time is an injected dependency, not ambient state. Code that needs durations or deadlines (metrics, timeouts, backoff) reads from a monotonic time source; code that needs timestamps (log entries, event metadata) reads from a wall-clock source. The two are separate abstractions — they have different correctness properties and must not be conflated. Direct calls to System.nanoTime(), System.currentTimeMillis(), or Instant.now() from algorithm code are forbidden.
 
 ## Testing conventions
 
@@ -84,7 +74,7 @@ All tests are JUnit 5 with AssertJ. Any new test Claude writes must follow this 
     - **Spring Boot context sharing across tests in the same class:** `@SpringBootTest` recycles the `ApplicationContext` between test methods within a single test class for performance. State changes made by one test method (e.g., a runtime strategy hot-swap) are visible to subsequent test methods in the same class. The standard pattern: use **disjoint resource names** per test method (e.g., a separate `@Bean InqElement` per test, named `aopHotSwap` vs. `aopRetune`), so each test exercises its own portion of the shared context without observing artefacts from prior tests. Combined with the `@Nested` caveat above, this means Spring Boot test classes are typically flat with method-level resource isolation, not nested with class-level isolation.
   
 - **AssertJ only** (`assertThat(...)`). No JUnit `assertEquals`, no Hamcrest.
-- **Deterministic time.** Inject `InqNanoTimeSource` or `InqClock` from an `AtomicLong`/`AtomicReference`. Never `Thread.sleep`.
+- **Deterministic time.** Inject a controllable time source — monotonic for durations and deadlines, wall-clock for timestamps — typically backed by an AtomicLong or AtomicReference. Never Thread.sleep, and never read System.nanoTime() or Instant.now() directly in tests.
 - Tests should be thorough. Cover happy path, edge cases, error conditions, and concurrency where relevant.
 - Tests are generally independent and isolated classes. In particular, they have no influence on other tests (in Spring Boot, there is often the case that Spring Boot captures too much information through classpath scanning).
 - Do not use mock libraries

@@ -62,6 +62,7 @@ module inqudium.core {
     exports eu.inqudium.core.element;
     exports eu.inqudium.core.time;
     exports eu.inqudium.core.log;
+    exports eu.inqudium.core.pipeline.function;
 
 
     // ── ServiceLoader SPI declarations ──

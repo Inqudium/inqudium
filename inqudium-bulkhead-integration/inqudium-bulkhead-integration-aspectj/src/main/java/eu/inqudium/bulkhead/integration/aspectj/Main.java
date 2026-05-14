@@ -1,37 +1,48 @@
 package eu.inqudium.bulkhead.integration.aspectj;
 
+import eu.inqudium.config.event.ComponentBecameHotEvent;
+import eu.inqudium.config.event.RuntimeComponentAddedEvent;
+import eu.inqudium.config.event.RuntimeComponentPatchedEvent;
+import eu.inqudium.config.event.RuntimeComponentRemovedEvent;
+import eu.inqudium.config.event.RuntimeComponentVetoedEvent;
+import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.core.element.bulkhead.InqBulkheadFullException;
+import eu.inqudium.core.event.InqEventPublisher;
+import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.aspectj.lang.Aspects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * End-to-end demonstration of the AspectJ-native integration style.
+ * End-to-end demonstration of the AspectJ-native integration style with practice-grade logging
+ * and a runtime-configuration-change demo.
  *
- * <p>The flow follows the natural structure of an AspectJ-native application:
+ * <p>The flow follows the natural structure of an AspectJ-native application that takes
+ * operability seriously:
  * <ol>
- *   <li>build a plain {@link OrderService} — no Inqudium type, no decoration, no proxy
- *       wrapper at the call site. Methods on {@code OrderService} are annotated with
- *       {@link eu.inqudium.annotation.InqBulkhead @InqBulkhead("orderBh")} — the same
- *       annotation the Spring Boot integration uses,</li>
- *   <li>call its methods directly — the compile-time-woven {@link OrderBulkheadAspect}
- *       binds the {@code @InqBulkhead} annotation, reads its {@code value()}, resolves the
- *       named bulkhead from the runtime, and routes the join point through that bulkhead
- *       transparently,</li>
- *   <li>let AspectJ construct the aspect singleton on first use; the aspect's constructor
- *       builds the {@link eu.inqudium.config.runtime.InqRuntime}, and the per-name terminal
- *       cache populates lazily on the first invocation for each bulkhead name.</li>
+ *   <li>reach the AspectJ-singleton {@link OrderBulkheadAspect} via {@link Aspects#aspectOf}.
+ *       The aspect's constructor has already built the {@link InqRuntime}, registered the
+ *       bulkhead, and subscribed bulkhead-event handlers — by the time we enter Main the
+ *       aspect's lifecycle is in place,</li>
+ *   <li>install a bootstrap-side lifecycle-event subscriber on the runtime's event publisher
+ *       so topology changes (added / patched / removed / vetoed / became-hot) appear in the
+ *       log,</li>
+ *   <li>build a plain {@link OrderService} — its methods carry the {@code @InqBulkhead}
+ *       annotation that ajc has rewired at compile time to enter the aspect first,</li>
+ *   <li>build {@link AdminService} — the operator surface for the runtime patch demo,</li>
+ *   <li>run the three-phase demo: normal operation → sell promotion (patched) → after
+ *       promotion (patched back).</li>
  * </ol>
  *
- * <p>The decisive structural difference from the function-based example: here the bulkhead's
- * placement is invisible at every call site. The {@code service} reference in the demo code
- * is an {@link OrderService}, indistinguishable from a plain implementation; callers do not
- * see {@code decorateFunction(...)} or {@code decorateAsyncFunction(...)} sprinkled around
- * the call site, and they do not even build a proxy. The bytecode of every annotated method
- * has been rewritten at build time to enter the aspect first.
+ * <p>Decision deviation from sub-step&nbsp;6.C decision&nbsp;3 (topology logging in the
+ * service) and decision&nbsp;4 (bulkhead-event subscription in the service): both
+ * responsibilities live in {@link OrderBulkheadAspect}. The AspectJ idiom keeps the service
+ * plain Java with no reference to the aspect, the runtime, or the bulkhead — the aspect is
+ * therefore the natural locus for both. See the aspect's class Javadoc for the rationale.
  *
  * <p>The aspect's runtime is not closed explicitly — the AspectJ singleton lives for the
  * JVM's lifetime, so its runtime does too. For an example/demo this is acceptable; in a real
@@ -41,148 +52,152 @@ import java.util.concurrent.CountDownLatch;
  */
 public final class Main {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
+
     private Main() {
         // entry point only
     }
 
     public static void main(String[] args) {
-        // The aspect is woven into OrderService at build time. By the time we reach the first
-        // call below, ajc has already rewritten the bytecode of every @InqBulkhead-annotated
-        // method to enter OrderBulkheadAspect.aroundInqBulkhead first; that advice reads the
-        // annotation's value() ("orderBh") and dispatches through the matching bulkhead.
+        // The aspect's constructor has already run by the time aspectOf() returns: the runtime
+        // is built, the bulkhead is registered, the bulkhead-event handlers are subscribed.
+        // The lifecycle subscription below therefore sees only events that fire after this
+        // point — patches from AdminService and the became-hot event on the first invocation.
+        // The initial RuntimeComponentAddedEvent for 'orderBh' fires during the aspect's
+        // constructor and is not observable here; this matches the function and proxy
+        // examples, where lifecycle subscription happens after the runtime has already been
+        // built.
+        OrderBulkheadAspect aspect = Aspects.aspectOf(OrderBulkheadAspect.class);
+        InqRuntime runtime = aspect.runtime();
+        subscribeLifecycleEvents(runtime.general().eventPublisher());
+
         OrderService service = new OrderService();
+        AdminService admin = new AdminService(runtime);
 
-        System.out.println("=== Sync demo ===");
-        runSyncDemo(service);
-
-        System.out.println("=== Async demo ===");
-        runAsyncDemo(service);
+        phase1NormalOperation(service, aspect.bulkhead());
+        phase2SellPromotion(service, admin);
+        phase3AfterPromotion(service, admin, aspect.bulkhead());
     }
 
     /**
-     * Synchronous half of the demo: call the woven service's sync methods directly. The
-     * aspect routes each invocation through the sync chain — the bulkhead acquires a permit,
-     * the original method body runs, the permit is released in the chain's finally block.
+     * Phase 1: balanced/2 permits. Two normal calls succeed; saturation with two holders +
+     * one extra rejects the third call synchronously with
+     * {@link InqBulkheadFullException}.
      */
-    private static void runSyncDemo(OrderService service) {
-        // Plain method calls on a plain OrderService reference. Compare to the function-based
-        // example, where every call site holds a separately-built Function<String, String> —
-        // and to the proxy-based example, where the call site at least builds a proxy. The
-        // aspect makes both wrappings invisible: the call site looks like ordinary Java.
+    private static void phase1NormalOperation(OrderService service,
+                                              InqBulkhead<?, ?> bulkhead) {
+        System.out.println();
+        System.out.println("=== Phase 1: Normal operation (balanced/2) ===");
+
         System.out.println(service.placeOrder("Widget"));
         System.out.println(service.placeOrder("Sprocket"));
-        System.out.println(service.placeOrder("Gadget"));
-
-        demonstrateSyncSaturation(service);
+        demonstrateSaturation(service, bulkhead, 2);
     }
 
     /**
-     * Asynchronous half of the demo: call the woven service's async methods directly. The
-     * aspect reads the {@link CompletionStage} return type and routes the invocation through
-     * the async chain; the same bulkhead instance the sync demo just exercised serves the
-     * async path through one terminal.
+     * Phase 2: patch to permissive/50, then demonstrate that 5 concurrent holders all succeed
+     * — none rejected. Releases all holders cleanly before returning.
      */
-    private static void runAsyncDemo(OrderService service) {
-        // Each invocation returns an already-complete stage (the original method body
-        // synchronously produces its value). join() reads the stage's value and confirms the
-        // permit has returned to the pool by the time we move on.
-        System.out.println(service.placeOrderAsync("Apple").toCompletableFuture().join());
-        System.out.println(service.placeOrderAsync("Banana").toCompletableFuture().join());
-        System.out.println(service.placeOrderAsync("Cherry").toCompletableFuture().join());
+    private static void phase2SellPromotion(OrderService service, AdminService admin) {
+        System.out.println();
+        System.out.println("=== Phase 2: Sell promotion (permissive/50) ===");
 
-        demonstrateAsyncSaturation(service);
+        admin.startSellPromotion();
+        runFiveConcurrentHolders(service);
     }
 
     /**
-     * Saturate the bulkhead with two virtual-thread holders, attempt a third call from the
-     * main thread, and observe the rejection. The pattern mirrors the function-based and
-     * proxy-based examples' saturation flows — the surface is the woven {@link OrderService}
-     * reference, but the rejection contract on the sync path is identical: a synchronous
-     * throw of {@link InqBulkheadFullException} from the bulkhead's start phase.
+     * Phase 3: patch back to balanced/2 and re-run the saturation pattern from phase 1. The
+     * third call is rejected again — proof the patch reversed cleanly.
      */
-    private static void demonstrateSyncSaturation(OrderService service) {
-        CountDownLatch holderAcquired1 = new CountDownLatch(1);
-        CountDownLatch holderAcquired2 = new CountDownLatch(1);
+    private static void phase3AfterPromotion(OrderService service, AdminService admin,
+                                             InqBulkhead<?, ?> bulkhead) {
+        System.out.println();
+        System.out.println("=== Phase 3: After promotion (balanced/2) ===");
+
+        admin.endSellPromotion();
+        demonstrateSaturation(service, bulkhead, 2);
+    }
+
+    /**
+     * Subscribe handlers for the five runtime-lifecycle event types. Levels follow sub-step
+     * 6.E decision&nbsp;5: INFO for the four "normal" lifecycle events, WARN for vetoes
+     * (a policy rejection is louder than a routine topology change).
+     */
+    private static void subscribeLifecycleEvents(InqEventPublisher publisher) {
+        publisher.onEvent(ComponentBecameHotEvent.class, e ->
+                LOG.info("Component became hot: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentAddedEvent.class, e ->
+                LOG.info("Runtime component added: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentPatchedEvent.class, e ->
+                LOG.info("Runtime component patched: '{}' ({}) — touched {}",
+                        e.getElementName(), e.getElementType(), e.touchedFields()));
+        publisher.onEvent(RuntimeComponentRemovedEvent.class, e ->
+                LOG.info("Runtime component removed: '{}' ({})",
+                        e.getElementName(), e.getElementType()));
+        publisher.onEvent(RuntimeComponentVetoedEvent.class, e ->
+                LOG.warn("Runtime component vetoed: '{}' ({}) — finding {}",
+                        e.getElementName(), e.getElementType(), e.vetoFinding()));
+    }
+
+    /**
+     * Saturate the bulkhead with {@code limit} virtual-thread holders, attempt one extra call
+     * from the main thread, and observe synchronous rejection. Used by phases 1 and 3.
+     */
+    private static void demonstrateSaturation(OrderService service, InqBulkhead<?, ?> bulkhead,
+                                              int limit) {
+        CountDownLatch[] acquired = new CountDownLatch[limit];
         CountDownLatch release = new CountDownLatch(1);
-
-        Thread holder1 = Thread.startVirtualThread(() ->
-                service.placeOrderHolding(holderAcquired1, release));
-        Thread holder2 = Thread.startVirtualThread(() ->
-                service.placeOrderHolding(holderAcquired2, release));
+        Thread[] holders = new Thread[limit];
+        for (int i = 0; i < limit; i++) {
+            acquired[i] = new CountDownLatch(1);
+            CountDownLatch acq = acquired[i];
+            holders[i] = Thread.startVirtualThread(() -> service.placeOrderHolding(acq, release));
+        }
 
         try {
-            holderAcquired1.await();
-            holderAcquired2.await();
+            for (CountDownLatch a : acquired) {
+                a.await();
+            }
 
+            System.out.println("available permits while saturated: " + bulkhead.availablePermits());
             try {
                 service.placeOrder("Saturated");
-                System.out.println("unexpected: third sync call returned");
+                System.out.println("unexpected: extra call returned");
             } catch (InqBulkheadFullException rejected) {
-                System.out.println("third sync call rejected: " + rejected.getRejectionReason());
+                System.out.println("extra call rejected: " + rejected.getRejectionReason());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
             release.countDown();
-            joinQuietly(holder1);
-            joinQuietly(holder2);
+            for (Thread t : holders) {
+                joinQuietly(t);
+            }
         }
     }
 
     /**
-     * Async-path saturation. Two holders consume both permits by invoking the woven
-     * async-holding method with a release future that has not yet completed; a third
-     * invocation is rejected with {@link InqBulkheadFullException}.
-     *
-     * <p>Channel difference vs. the function-based example: {@link
-     * eu.inqudium.aspect.pipeline.HybridAspectPipelineTerminal} implements a documented
-     * <em>uniform error channel</em> on the async path — any exception thrown synchronously
-     * by a pipeline element (including the bulkhead's synchronous {@code
-     * InqBulkheadFullException}) is captured into a failed {@link CompletionStage} rather
-     * than thrown to the caller. The behaviour matches what the proxy-based example
-     * demonstrates through {@code InqAsyncProxyFactory.of(InqPipeline)}; the rejection
-     * itself is identical, only the surface through which it reaches the caller is
-     * different. The function-based decoration path lets the throw propagate; the aspect
-     * normalizes it for callers that always expect a stage on async-typed methods.
-     *
-     * <p>One structural detail that differs from the sync saturation:
-     * <ul>
-     *   <li>No "acquired" latch is needed. The async path acquires its permit synchronously
-     *       on the calling thread, so by the time the woven method returns its still-pending
-     *       stage the permit is already held.</li>
-     * </ul>
+     * Five concurrent async holders — exercises the post-patch capacity (50 permits). All five
+     * succeed; no rejection. The async holding shape needs no "acquired" latch because the
+     * bulkhead acquires synchronously on the calling thread.
      */
-    private static void demonstrateAsyncSaturation(OrderService service) {
+    private static void runFiveConcurrentHolders(OrderService service) {
         CompletableFuture<Void> release = new CompletableFuture<>();
-        CompletionStage<String> holder1 = service.placeOrderHoldingAsync(release);
-        CompletionStage<String> holder2 = service.placeOrderHoldingAsync(release);
-
-        try {
-            CompletionStage<String> third = service.placeOrderAsync("Saturated");
-            try {
-                third.toCompletableFuture().join();
-                System.out.println("unexpected: third async call produced a value");
-            } catch (CompletionException ce) {
-                Throwable cause = ce.getCause();
-                if (cause instanceof InqBulkheadFullException rejected) {
-                    System.out.println("third async call rejected: "
-                            + rejected.getRejectionReason() + " (failed stage)");
-                } else {
-                    System.out.println("unexpected cause: " + cause);
-                }
-            }
-        } finally {
-            release.complete(null);
-            holder1.toCompletableFuture().join();
-            holder2.toCompletableFuture().join();
+        @SuppressWarnings("unchecked")
+        CompletionStage<String>[] holders = new CompletionStage[5];
+        for (int i = 0; i < 5; i++) {
+            holders[i] = service.placeOrderHoldingAsync(release);
         }
 
-        // Reach the aspect singleton via the AspectJ-generated aspectOf() accessor and
-        // confirm the bulkhead has released both permits before the demo exits. The accessor
-        // is what every CTW user uses to talk to a woven aspect from outside the join points.
-        OrderBulkheadAspect aspect = Aspects.aspectOf(OrderBulkheadAspect.class);
-        System.out.println("permits after async saturation: "
-                + aspect.bulkhead().availablePermits());
+        System.out.println("five concurrent async holders accepted under permissive/50");
+
+        release.complete(null);
+        for (CompletionStage<String> h : holders) {
+            System.out.println(h.toCompletableFuture().join());
+        }
     }
 
     private static void joinQuietly(Thread t) {

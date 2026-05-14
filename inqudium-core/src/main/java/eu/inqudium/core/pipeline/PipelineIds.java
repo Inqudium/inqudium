@@ -13,22 +13,13 @@ import java.util.function.LongSupplier;
  * and {@code AbstractBaseWrapper}. Everything now lives here, behind one
  * coherent API.</p>
  *
- * <h3>Two JVM-global counters + a factory for instance-local counters</h3>
+ * <h3>One JVM-global counter + a factory for instance-local counters</h3>
  * <dl>
  *   <dt>{@link #nextChainId() Chain IDs}</dt>
  *   <dd>JVM-global. Drawn once per new wrapper chain and once per resolved
  *       pipeline. Every layer wrapping the same delegate inherits the same
- *       chain ID. Also used by standalone executions so that their IDs
- *       cannot collide with any chain created in the same JVM. Call rate
- *       is low (once per long-lived pipeline or chain construction) —
- *       contention is a non-issue.</dd>
- *
- *   <dt>{@link #nextStandaloneCallId() Standalone call IDs}</dt>
- *   <dd>JVM-global. Drawn by one-shot execution paths that are not backed
- *       by a long-lived pipeline — typically {@code InqExecutor} and
- *       {@code InqAsyncExecutor}. One-shot usage keeps call rate per caller
- *       low; aggregate contention across callers is accepted as a cost
- *       of having no persistent state to attach a counter to.</dd>
+ *       chain ID. Call rate is low (once per long-lived pipeline or chain
+ *       construction) — contention is a non-issue.</dd>
  *
  *   <dt>{@link #newInstanceCallIdSource() Instance-local call-ID source}</dt>
  *   <dd>Factory. Produces a fresh {@link LongSupplier} backed by its own
@@ -70,11 +61,6 @@ public final class PipelineIds {
     private static final AtomicLong CHAIN_ID_COUNTER = new AtomicLong();
 
     /**
-     * JVM-wide counter for standalone call IDs.
-     */
-    private static final AtomicLong STANDALONE_CALL_ID_COUNTER = new AtomicLong();
-
-    /**
      * Prevent instantiation — this is a utility class.
      */
     private PipelineIds() {
@@ -85,26 +71,12 @@ public final class PipelineIds {
      *
      * <p>Returned IDs are monotonically increasing and never collide within
      * the same JVM lifetime, regardless of whether they are requested by a
-     * wrapper chain, a resolved pipeline, or a standalone execution.</p>
+     * wrapper chain or a resolved pipeline.</p>
      *
      * @return a new, unique chain ID
      */
     public static long nextChainId() {
         return CHAIN_ID_COUNTER.incrementAndGet();
-    }
-
-    /**
-     * Generates the next globally unique standalone call ID.
-     *
-     * <p>Intended for one-shot executions that are not tied to a long-lived
-     * pipeline. Pipeline-backed executions should use an instance-local
-     * source obtained from {@link #newInstanceCallIdSource()} instead — that
-     * avoids contention on a single shared counter under concurrent load.</p>
-     *
-     * @return a new, unique standalone call ID
-     */
-    public static long nextStandaloneCallId() {
-        return STANDALONE_CALL_ID_COUNTER.incrementAndGet();
     }
 
     /**

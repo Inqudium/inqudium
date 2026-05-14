@@ -6,7 +6,7 @@ import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.JoinPointExecutor;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

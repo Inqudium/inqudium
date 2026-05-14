@@ -1,4 +1,9 @@
-package eu.inqudium.core.pipeline;
+package eu.inqudium.core.pipeline.function;
+
+import eu.inqudium.core.pipeline.BaseWrapper;
+import eu.inqudium.core.pipeline.InqDecorator;
+import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerAction;
 
 import java.util.function.Function;
 

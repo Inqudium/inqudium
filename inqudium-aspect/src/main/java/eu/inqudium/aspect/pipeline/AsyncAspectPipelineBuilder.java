@@ -1,7 +1,7 @@
 package eu.inqudium.aspect.pipeline;
 
-import eu.inqudium.core.pipeline.JoinPointExecutor;
-import eu.inqudium.imperative.core.pipeline.AsyncJoinPointWrapper;
+import eu.inqudium.core.pipeline.function.JoinPointExecutor;
+import eu.inqudium.imperative.core.pipeline.function.AsyncJoinPointWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 
 import java.lang.reflect.Method;
