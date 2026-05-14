@@ -150,3 +150,44 @@ better without a stated semantics for what registries are.
 
 **When to address:** Together with the registry-semantics review in the next architecture
 audit cycle. Not on the critical path for the bulkhead pattern's completion.
+
+---
+
+## `inqudium-annotation-support` consumes the removed `@InqShield(order = "CUSTOM")` mode
+
+**Where:** `inqudium-annotation-support/` — module exists in the multi-module build with a
+legacy annotation scanner and pipeline factory that read `@InqShield(order = "CUSTOM")`
+directly. The exact file inventory inside the module is preserved as-is; no source there
+was touched during the ADR-036 evaluator phase.
+
+**The gap:** Since the ADR-036 evaluator phase (PRs #53–#59 plus the closure PR), the
+`@InqShield` annotation no longer supports `order = "CUSTOM"` — that mode was replaced by
+the typed `customOrder` attribute of type `InqElementType[]`. The
+`inqudium-annotation-support` module still reads the removed `"CUSTOM"` value, so its code
+path is unreachable from any annotation a current user can write.
+
+**Why it matters:** The module compiles, its tests pass, and no consumer migration is
+forced — so no breakage surfaces at build time. But the code is dead in practice and
+confuses readers of the build structure: the module is part of the reactor, runs on every
+build, and the `"CUSTOM"` literal remains searchable in the repository as if it were active.
+A future contributor reading `@InqShield`'s Javadoc sees only two recognised `order`
+values, then greps the repository and finds a third — confusing drift.
+
+**Why we deferred it:** The ADR-036 phase was scoped to introducing the new evaluator in
+`inqudium-annotation`. Migrating consumers of `inqudium-annotation-support` to the new
+evaluator (if any remain) and/or deleting the legacy module is a separate concern that
+touches different files and benefits from independent review.
+
+**Shape of the fix:** Investigate the module's actual consumers first. Two plausible
+directions follow:
+
+- If `inqudium-annotation-support` still has callers inside or outside the repository,
+  migrate them to `AnnotationEvaluator.forPipeline(pipeline).evaluate(...)` and remove
+  the legacy scanner in the same PR.
+- If `inqudium-annotation-support` has no remaining consumers, delete the module from the
+  multi-module build, drop its `pom.xml` from the reactor, and remove the `"CUSTOM"`
+  literal from the search space.
+
+**When to address:** Separate session, when capacity allows. Not on the critical path for
+any current phase. The follow-up session should also reconcile the legacy module's tests
+with whatever the chosen path leaves behind.
