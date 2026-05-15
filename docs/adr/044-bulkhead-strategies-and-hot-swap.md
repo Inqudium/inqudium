@@ -344,7 +344,7 @@ Strategy configuration is expressed as a sealed-type discriminator:
 ```java
 public sealed interface BulkheadStrategyConfig
         permits SemaphoreStrategyConfig, CoDelStrategyConfig, AdaptiveStrategyConfig,
-                AdaptiveInstantStrategyConfig {
+                AdaptiveInstantBulkheadStrategyConfig {
 }
 
 public record SemaphoreStrategyConfig() implements BulkheadStrategyConfig { }
@@ -373,10 +373,10 @@ public record AdaptiveStrategyConfig(
     }
 }
 
-public record AdaptiveInstantStrategyConfig(
+public record AdaptiveInstantBulkheadStrategyConfig(
     LimitAlgorithm algorithm
 ) implements BulkheadStrategyConfig {
-    public AdaptiveInstantStrategyConfig {
+    public AdaptiveInstantBulkheadStrategyConfig {
         Objects.requireNonNull(algorithm, "algorithm");
     }
 }
@@ -417,7 +417,7 @@ final class BulkheadStrategyFactory {
                     snapshot.maxConcurrentCalls(), c.targetDelay(), c.interval(), /* ... */);
             case AdaptiveStrategyConfig a -> new AdaptiveBulkheadStrategy(
                     snapshot.maxConcurrentCalls(), buildAlgorithm(a.algorithm()), /* ... */);
-            case AdaptiveInstantStrategyConfig a -> new AdaptiveInstantBulkheadStrategy(
+            case AdaptiveInstantBulkheadStrategyConfig a -> new AdaptiveInstantBulkheadStrategy(
                     snapshot.maxConcurrentCalls(), buildAlgorithm(a.algorithm()), /* ... */);
         };
     }
