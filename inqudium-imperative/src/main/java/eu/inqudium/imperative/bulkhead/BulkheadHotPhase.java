@@ -11,6 +11,7 @@ import eu.inqudium.config.snapshot.BulkheadField;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
 import eu.inqudium.config.snapshot.BulkheadStrategyConfig;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.lifecycle.ImperativeLifecyclePhasedComponent.ShutdownAware;
 import eu.inqudium.core.element.bulkhead.BulkheadEventPublishFailureException;
 import eu.inqudium.core.element.bulkhead.InqBulkheadFullException;
@@ -20,16 +21,15 @@ import eu.inqudium.core.element.bulkhead.event.BulkheadOnRejectEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadOnReleaseEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadRollbackTraceEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadWaitTraceEvent;
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy;
-import eu.inqudium.core.element.bulkhead.strategy.NonBlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.InstantBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 import eu.inqudium.core.event.InqEvent;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.exception.InqException;
-import eu.inqudium.core.pipeline.InternalExecutor;
 import eu.inqudium.imperative.bulkhead.strategy.SemaphoreBulkheadStrategy;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import eu.inqudium.imperative.lifecycle.spi.AsyncImperativePhase;
 import eu.inqudium.imperative.lifecycle.spi.HotPhaseMarker;
 
@@ -51,10 +51,10 @@ import java.util.concurrent.CompletionStage;
  * single strategy instance:
  *
  * <ul>
- *   <li>{@link #execute(long, long, Object, InternalExecutor) execute} (sync) acquires a permit,
+ *   <li>{@link #execute(long, long, Object, LayerTerminal) execute} (sync) acquires a permit,
  *       runs the downstream chain, feeds the strategy's adaptive algorithm with the call's RTT
  *       and success flag, and releases the permit in a {@code finally} block.</li>
- *   <li>{@link #executeAsync(long, long, Object, InternalAsyncExecutor) executeAsync} acquires
+ *   <li>{@link #executeAsync(long, long, Object, AsyncLayerTerminal) executeAsync} acquires
  *       the permit synchronously on the calling thread (back-pressure), runs the downstream
  *       async chain, and attaches a release callback to the returned stage so the permit
  *       remains held for the lifetime of the async operation. Per ADR-023 the method returns
@@ -217,10 +217,10 @@ final class BulkheadHotPhase<A, R>
      */
     private RejectionContext tryAcquire(Duration maxWaitDuration)
             throws InterruptedException {
-        if (strategy instanceof BlockingBulkheadStrategy blocking) {
+        if (strategy instanceof TimedBulkheadStrategy blocking) {
             return blocking.tryAcquire(maxWaitDuration);
         }
-        if (strategy instanceof NonBlockingBulkheadStrategy nonBlocking) {
+        if (strategy instanceof InstantBulkheadStrategy nonBlocking) {
             return nonBlocking.tryAcquire();
         }
         throw new IllegalStateException(
@@ -365,7 +365,7 @@ final class BulkheadHotPhase<A, R>
 
     @Override
     public R execute(
-            long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+            long chainId, long callId, A argument, LayerTerminal<A, R> next) {
         BulkheadSnapshot snap = component.snapshot();
         BulkheadEventConfig events = snap.events();
         InqEventPublisher publisher = component.eventPublisher();
@@ -418,7 +418,7 @@ final class BulkheadHotPhase<A, R>
     /**
      * Async counterpart to {@link #execute}. Acquires the permit synchronously on the calling
      * thread (back-pressure: rejection or interrupt surface as a synchronous throw before any
-     * stage exists), runs the downstream {@link InternalAsyncExecutor#executeAsync}, and attaches
+     * stage exists), runs the downstream {@link AsyncLayerTerminal#executeAsync}, and attaches
      * a release callback to the returned stage so the permit is held for the entire lifetime
      * of the async operation.
      *
@@ -435,7 +435,7 @@ final class BulkheadHotPhase<A, R>
      */
     @Override
     public CompletionStage<R> executeAsync(
-            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next) {
+            long chainId, long callId, A argument, AsyncLayerTerminal<A, R> next) {
         BulkheadSnapshot snap = component.snapshot();
         BulkheadEventConfig events = snap.events();
         InqEventPublisher publisher = component.eventPublisher();

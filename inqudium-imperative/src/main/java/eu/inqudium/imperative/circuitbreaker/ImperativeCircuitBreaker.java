@@ -10,9 +10,9 @@ import eu.inqudium.core.element.circuitbreaker.StateTransition;
 import eu.inqudium.core.element.circuitbreaker.config.InqCircuitBreakerConfig;
 import eu.inqudium.core.element.circuitbreaker.metrics.FailureMetrics;
 import eu.inqudium.core.event.InqEventPublisher;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqNanoTimeSource;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.util.List;
 import java.util.Objects;
@@ -237,7 +237,7 @@ public class ImperativeCircuitBreaker<A, R> implements CircuitBreaker<A, R> {
      * @throws CircuitBreakerException if the circuit breaker is OPEN and rejects the call
      */
     @Override
-    public R execute(long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+    public R execute(long chainId, long callId, A argument, LayerTerminal<A, R> next) {
         acquirePermissionOrThrow();
         boolean outcomeRecorded = false;
         try {
@@ -299,7 +299,7 @@ public class ImperativeCircuitBreaker<A, R> implements CircuitBreaker<A, R> {
      */
     @Override
     public CompletionStage<R> executeAsync(long chainId, long callId, A argument,
-                                           InternalAsyncExecutor<A, R> next) {
+                                           AsyncLayerTerminal<A, R> next) {
         // Synchronous fast-fail: reject immediately if the circuit is OPEN
         acquirePermissionOrThrow();
 
@@ -339,7 +339,7 @@ public class ImperativeCircuitBreaker<A, R> implements CircuitBreaker<A, R> {
      * Executes a {@link Callable} protected by this circuit breaker.
      *
      * <p>Standalone convenience method for use outside the pipeline. Unlike
-     * {@link #execute(long, long, Object, InternalExecutor)}, this does not
+     * {@link #execute(long, long, Object, LayerTerminal)}, this does not
      * participate in chain/call identity propagation (ADR-022).</p>
      *
      * <p>Preserves {@link InterruptedException} semantics: if the callable throws

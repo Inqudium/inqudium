@@ -5,7 +5,6 @@ import eu.inqudium.config.snapshot.BulkheadEventConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
 import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
-import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.element.bulkhead.BulkheadEventPublishFailureException;
 import eu.inqudium.core.element.bulkhead.event.BulkheadOnAcquireEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadOnReleaseEvent;
@@ -16,7 +15,7 @@ import eu.inqudium.core.event.InqEventConsumer;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.event.InqSubscription;
 import eu.inqudium.core.log.LoggerFactory;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.core.time.InqNanoTimeSource;
 import org.junit.jupiter.api.DisplayName;
@@ -67,11 +66,11 @@ class BulkheadRollbackTest {
         return new InqBulkhead<>(live, general);
     }
 
-    private static <A> InternalExecutor<A, A> identity() {
+    private static <A> LayerTerminal<A, A> identity() {
         return (chainId, callId, arg) -> arg;
     }
 
-    private static <A> InternalExecutor<A, A> trackingIdentity(AtomicInteger calls) {
+    private static <A> LayerTerminal<A, A> trackingIdentity(AtomicInteger calls) {
         return (chainId, callId, arg) -> {
             calls.incrementAndGet();
             return arg;

@@ -14,9 +14,9 @@ import eu.inqudium.config.runtime.ComponentRemovedException;
 import eu.inqudium.config.snapshot.ComponentSnapshot;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import eu.inqudium.imperative.lifecycle.spi.AsyncImperativePhase;
 import eu.inqudium.imperative.lifecycle.spi.HotPhaseMarker;
 import eu.inqudium.imperative.lifecycle.spi.ImperativePhase;
@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * one-directional cold-to-hot transition through an {@link AtomicReference} of the current
  * phase. The phase reference starts pointing at the inner {@code ColdPhase} and is replaced via
  * a single successful {@link AtomicReference#compareAndSet compareAndSet} on the first call to
- * {@link #execute(long, long, Object, InternalExecutor) execute}. After the transition, every
+ * {@link #execute(long, long, Object, LayerTerminal) execute}. After the transition, every
  * subsequent execute call goes directly to the hot phase without re-checking lifecycle state.
  *
  * <h2>The cold-to-hot CAS</h2>
@@ -60,7 +60,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * {@code inqudium-config} can iterate listeners through a paradigm-agnostic reference.
  *
  * <p>The {@code A}/{@code R} type parameters propagate the call's argument and return shape into
- * the phase reference and into the {@link #execute(long, long, Object, InternalExecutor) execute}
+ * the phase reference and into the {@link #execute(long, long, Object, LayerTerminal) execute}
  * signature (ADR-033). Components that dispatch calls of arbitrary shape — such as
  * {@code InqBulkhead} accessed via the runtime registry — instantiate at
  * {@code <S, Object, Object>} so the inherited execute reduces to the type-erased form callers
@@ -252,7 +252,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
      * @return the value produced by the chain after passing through this component.
      */
     public final R execute(
-            long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+            long chainId, long callId, A argument, LayerTerminal<A, R> next) {
         ImperativePhase<A, R> current = phase.get();
         if (current instanceof RemovedPhase) {
             throw new ComponentRemovedException(name, elementType);
@@ -293,7 +293,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
      *         the async pipeline contract.
      */
     public final CompletionStage<R> executeAsync(
-            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next) {
+            long chainId, long callId, A argument, AsyncLayerTerminal<A, R> next) {
         ImperativePhase<A, R> current = phase.get();
         if (current instanceof RemovedPhase) {
             throw new ComponentRemovedException(name, elementType);
@@ -365,14 +365,14 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
 
         @Override
         public R execute(
-                long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+                long chainId, long callId, A argument, LayerTerminal<A, R> next) {
             transitionToHot(chainId, callId);
             return phase.get().execute(chainId, callId, argument, next);
         }
 
         @Override
         public CompletionStage<R> executeAsync(
-                long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next) {
+                long chainId, long callId, A argument, AsyncLayerTerminal<A, R> next) {
             transitionToHot(chainId, callId);
             ImperativePhase<A, R> current = phase.get();
             if (current instanceof AsyncImperativePhase<?, ?> async) {
@@ -430,7 +430,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
 
         @Override
         public R execute(
-                long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+                long chainId, long callId, A argument, LayerTerminal<A, R> next) {
             throw new ComponentRemovedException(componentName, componentElementType);
         }
     }

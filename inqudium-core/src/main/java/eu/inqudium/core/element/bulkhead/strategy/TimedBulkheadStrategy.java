@@ -17,10 +17,10 @@ import java.time.Duration;
  *   <li>{@code CoDelBulkheadStrategy} — {@link java.util.concurrent.locks.Condition#awaitNanos(long)} with CoDel evaluation</li>
  * </ul>
  *
- * @see NonBlockingBulkheadStrategy
+ * @see InstantBulkheadStrategy
  * @since 0.3.0
  */
-public interface BlockingBulkheadStrategy extends BulkheadStrategy {
+public interface TimedBulkheadStrategy extends BulkheadStrategy {
 
     /**
      * Attempts to acquire a permit, potentially blocking up to the timeout.

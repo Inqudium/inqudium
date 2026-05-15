@@ -5,7 +5,7 @@ import eu.inqudium.core.pipeline.function.JoinPointWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncBaseWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -35,7 +35,7 @@ public class AsyncJoinPointWrapper<R>
         this(name, delegate, AsyncLayerAction.passThrough());
     }
 
-    private static <R> InternalAsyncExecutor<Void, R> coreFor(JoinPointExecutor<CompletionStage<R>> delegate) {
+    private static <R> AsyncLayerTerminal<Void, R> coreFor(JoinPointExecutor<CompletionStage<R>> delegate) {
         return (chainId, callId, arg) -> {
             try {
                 return delegate.proceed();

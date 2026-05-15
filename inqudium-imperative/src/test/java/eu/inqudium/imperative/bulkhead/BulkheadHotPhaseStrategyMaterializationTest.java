@@ -14,7 +14,7 @@ import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.LimitAlgorithm;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("BulkheadHotPhase strategy materialization")
 class BulkheadHotPhaseStrategyMaterializationTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static GeneralSnapshot defaultGeneral() {

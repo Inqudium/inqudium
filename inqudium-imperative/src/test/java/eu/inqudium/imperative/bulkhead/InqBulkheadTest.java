@@ -13,10 +13,10 @@ import eu.inqudium.core.event.InqEventExporterRegistry;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.event.InqPublisherConfig;
 import eu.inqudium.core.log.LoggerFactory;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.core.time.InqNanoTimeSource;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +60,7 @@ class InqBulkheadTest {
                 new SemaphoreStrategyConfig());
     }
 
-    private static <A> InternalExecutor<A, A> identityExecutor() {
+    private static <A> LayerTerminal<A, A> identityExecutor() {
         return (chainId, callId, argument) -> argument;
     }
 
@@ -242,7 +242,7 @@ class InqBulkheadTest {
                     new LiveContainer<>(snapshot("x", 3, Duration.ofMillis(100)));
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
             AtomicReference<Integer> midFlightPermits = new AtomicReference<>();
-            InternalExecutor<String, String> next = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 midFlightPermits.set(bulkhead.availablePermits());
                 return arg.toUpperCase();
             };
@@ -272,7 +272,7 @@ class InqBulkheadTest {
             LiveContainer<BulkheadSnapshot> live =
                     new LiveContainer<>(snapshot("x", 2, Duration.ofMillis(100)));
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
-            InternalExecutor<String, String> next = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 throw new RuntimeException("downstream failure");
             };
 
@@ -300,7 +300,7 @@ class InqBulkheadTest {
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
             CountDownLatch holdPermit = new CountDownLatch(1);
             CountDownLatch firstAcquired = new CountDownLatch(1);
-            InternalExecutor<String, String> blocking = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> blocking = (chainId, callId, arg) -> {
                 firstAcquired.countDown();
                 try {
                     holdPermit.await(5, TimeUnit.SECONDS);
@@ -343,7 +343,7 @@ class InqBulkheadTest {
 
             AtomicReference<Integer> midFlightPermits = new AtomicReference<>();
             CompletableFuture<String> downstream = new CompletableFuture<>();
-            InternalAsyncExecutor<String, String> next = (chainId, callId, arg) -> {
+            AsyncLayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 midFlightPermits.set(bulkhead.availablePermits());
                 return downstream;
             };
@@ -390,7 +390,7 @@ class InqBulkheadTest {
                     1L, 1L, "first", (chainId, callId, arg) -> hold);
             assertThat(bulkhead.concurrentCalls()).isEqualTo(1);
 
-            InternalAsyncExecutor<String, String> never = (chainId, callId, arg) -> {
+            AsyncLayerTerminal<String, String> never = (chainId, callId, arg) -> {
                 throw new AssertionError("downstream must not run on a full bulkhead");
             };
 
@@ -425,7 +425,7 @@ class InqBulkheadTest {
                     new LiveContainer<>(snapshot("inv", 2, Duration.ofMillis(100)));
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
 
-            InternalAsyncExecutor<String, String> throwingNext = (chainId, callId, arg) -> {
+            AsyncLayerTerminal<String, String> throwingNext = (chainId, callId, arg) -> {
                 throw new IllegalStateException("downstream construction failure");
             };
 
@@ -449,7 +449,7 @@ class InqBulkheadTest {
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
 
             RuntimeException downstreamFailure = new RuntimeException("downstream boom");
-            InternalAsyncExecutor<String, String> failingNext = (chainId, callId, arg) ->
+            AsyncLayerTerminal<String, String> failingNext = (chainId, callId, arg) ->
                     CompletableFuture.failedFuture(downstreamFailure);
 
             // When
@@ -469,7 +469,7 @@ class InqBulkheadTest {
                     new LiveContainer<>(snapshot("inv", 2, Duration.ofMillis(100)));
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
             CompletableFuture<String> downstream = new CompletableFuture<>();
-            InternalAsyncExecutor<String, String> next = (chainId, callId, arg) -> downstream;
+            AsyncLayerTerminal<String, String> next = (chainId, callId, arg) -> downstream;
 
             // When — call returns a stage; permit held
             CompletionStage<String> result = bulkhead.executeAsync(1L, 1L, "x", next);
@@ -503,7 +503,7 @@ class InqBulkheadTest {
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
             CompletableFuture<String> alreadyDone = CompletableFuture.completedFuture("x");
             AtomicBoolean nextWasInvoked = new AtomicBoolean(false);
-            InternalAsyncExecutor<String, String> next = (chainId, callId, arg) -> {
+            AsyncLayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 nextWasInvoked.set(true);
                 return alreadyDone;
             };
@@ -582,7 +582,7 @@ class InqBulkheadTest {
 
             CountDownLatch syncMidFlight = new CountDownLatch(1);
             CountDownLatch syncRelease = new CountDownLatch(1);
-            InternalExecutor<String, String> syncBlocking = (cid, callId, arg) -> {
+            LayerTerminal<String, String> syncBlocking = (cid, callId, arg) -> {
                 syncMidFlight.countDown();
                 try {
                     syncRelease.await(5, TimeUnit.SECONDS);

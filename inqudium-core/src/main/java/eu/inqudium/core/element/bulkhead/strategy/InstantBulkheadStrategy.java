@@ -18,10 +18,10 @@ package eu.inqudium.core.element.bulkhead.strategy;
  * <p>Implementations should use lock-free primitives (e.g., {@link java.util.concurrent.atomic.AtomicInteger}
  * with CAS) to avoid any form of thread contention on the acquire path.
  *
- * @see BlockingBulkheadStrategy
+ * @see TimedBulkheadStrategy
  * @since 0.3.0
  */
-public interface NonBlockingBulkheadStrategy extends BulkheadStrategy {
+public interface InstantBulkheadStrategy extends BulkheadStrategy {
 
     /**
      * Attempts to acquire a permit without blocking.

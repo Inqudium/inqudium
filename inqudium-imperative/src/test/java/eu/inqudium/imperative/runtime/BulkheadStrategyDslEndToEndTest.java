@@ -13,7 +13,7 @@ import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
 import eu.inqudium.config.validation.ApplyOutcome;
 import eu.inqudium.config.validation.BuildReport;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Bulkhead strategy DSL end-to-end")
 class BulkheadStrategyDslEndToEndTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     @Nested

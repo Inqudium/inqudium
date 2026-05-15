@@ -54,10 +54,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code maxConcurrentCalls} field. This class intentionally keeps things simple for
  * the static-limit case.
  *
- * @see NonBlockingBulkheadStrategy
+ * @see InstantBulkheadStrategy
  * @since 0.3.0
  */
-public final class AtomicNonBlockingBulkheadStrategy implements NonBlockingBulkheadStrategy {
+public final class AtomicInstantBulkheadStrategy implements InstantBulkheadStrategy {
 
     private final int maxConcurrent;
 
@@ -86,13 +86,13 @@ public final class AtomicNonBlockingBulkheadStrategy implements NonBlockingBulkh
      *                           0 creates a "closed" bulkhead that rejects everything
      * @throws IllegalArgumentException if maxConcurrentCalls is negative
      */
-    public AtomicNonBlockingBulkheadStrategy(int maxConcurrentCalls) {
+    public AtomicInstantBulkheadStrategy(int maxConcurrentCalls) {
         if (maxConcurrentCalls < 0) {
             throw new IllegalArgumentException(
                     "maxConcurrentCalls must be >= 0, got " + maxConcurrentCalls);
         }
         if (maxConcurrentCalls == 0) {
-            System.getLogger(AtomicNonBlockingBulkheadStrategy.class.getName())
+            System.getLogger(AtomicInstantBulkheadStrategy.class.getName())
                     .log(System.Logger.Level.WARNING,
                             "AtomicNonBlockingBulkheadStrategy created with maxConcurrentCalls=0 — "
                                     + "all tryAcquire() calls will be rejected. "

@@ -2,7 +2,7 @@ package eu.inqudium.core.pipeline.function;
 
 import eu.inqudium.core.pipeline.BaseWrapper;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.Throws;
 
@@ -73,9 +73,9 @@ public class JoinPointWrapper<R>
      *
      * @param delegate the real join point executor to invoke at the end of the chain
      * @param <R>      the return type
-     * @return a terminal {@link InternalExecutor} with throwable wrapping
+     * @return a terminal {@link LayerTerminal} with throwable wrapping
      */
-    private static <R> InternalExecutor<Void, R> coreFor(JoinPointExecutor<R> delegate) {
+    private static <R> LayerTerminal<Void, R> coreFor(JoinPointExecutor<R> delegate) {
         return (chainId, callId, arg) -> {
             try {
                 return delegate.proceed();

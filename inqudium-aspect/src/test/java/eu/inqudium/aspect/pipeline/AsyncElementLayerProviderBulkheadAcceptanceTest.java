@@ -4,7 +4,7 @@ import eu.inqudium.config.Inqudium;
 import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -79,7 +79,7 @@ class AsyncElementLayerProviderBulkheadAcceptanceTest {
             // commonPool, no Thread.sleep), so the assertion does not depend on scheduling.
             AsyncLayerAction<Void, Object> action = provider.asyncLayerAction();
             AtomicInteger downstreamInvocations = new AtomicInteger();
-            InternalAsyncExecutor<Void, Object> downstream = (chainId, callId, argument) -> {
+            AsyncLayerTerminal<Void, Object> downstream = (chainId, callId, argument) -> {
                 downstreamInvocations.incrementAndGet();
                 return CompletableFuture.completedFuture("ok");
             };

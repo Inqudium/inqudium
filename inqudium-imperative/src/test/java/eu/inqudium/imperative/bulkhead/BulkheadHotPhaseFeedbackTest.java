@@ -13,10 +13,9 @@ import eu.inqudium.config.snapshot.LimitAlgorithm;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
 import eu.inqudium.core.element.bulkhead.InqBulkheadFullException;
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
-import eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -52,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("BulkheadHotPhase adaptive feedback (2.13)")
 class BulkheadHotPhaseFeedbackTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static GeneralSnapshot defaultGeneral() {
@@ -193,7 +192,7 @@ class BulkheadHotPhaseFeedbackTest {
             InqBulkhead<String, String> bh = new InqBulkhead<>(live, defaultGeneral());
             RecordingStrategy stub = new RecordingStrategy();
             BulkheadHotPhase<String, String> phase = new BulkheadHotPhase<>(bh, stub);
-            InternalExecutor<String, String> failing = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> failing = (chainId, callId, arg) -> {
                 throw new RuntimeException("boom");
             };
 
@@ -466,7 +465,7 @@ class BulkheadHotPhaseFeedbackTest {
      * Records the order in which {@link #onCallComplete} and {@link #release} are invoked.
      * Used to pin the ADR-020 ordering contract on the bulkhead's execute path.
      */
-    private static final class RecordingStrategy implements BlockingBulkheadStrategy {
+    private static final class RecordingStrategy implements TimedBulkheadStrategy {
 
         final List<String> events = new ArrayList<>();
         private int active;
@@ -513,7 +512,7 @@ class BulkheadHotPhaseFeedbackTest {
      * Strategy whose {@link #onCallComplete} throws. Used to verify the bulkhead logs and
      * swallows the algorithm failure and still calls {@link #release}.
      */
-    private static final class ThrowingStrategy implements BlockingBulkheadStrategy {
+    private static final class ThrowingStrategy implements TimedBulkheadStrategy {
 
         int onCallCompleteInvocations;
         boolean released;
@@ -560,7 +559,7 @@ class BulkheadHotPhaseFeedbackTest {
      * before returning. Used by the rejection-path tests to pin the rejecting branch
      * deterministically without relying on virtual-thread ordering races.
      */
-    private static final class HoldingExecutor implements InternalExecutor<String, String> {
+    private static final class HoldingExecutor implements LayerTerminal<String, String> {
 
         private final java.util.concurrent.CountDownLatch acquired =
                 new java.util.concurrent.CountDownLatch(1);

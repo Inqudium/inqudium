@@ -1,6 +1,6 @@
 package eu.inqudium.aspect.pipeline;
 
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
@@ -31,7 +31,7 @@ import java.util.concurrent.CompletionException;
  * loop over that array — no {@code Function<F,F>} cascade, no
  * {@code ThreadLocal}, no per-call provider access.</p>
  *
- * <p>Each invocation creates N+1 small {@link InternalExecutor} lambdas
+ * <p>Each invocation creates N+1 small {@link LayerTerminal} lambdas
  * (one terminal + one per layer). These lambdas are short-lived, do not
  * escape the {@code execute()} call, and are strong candidates for JIT
  * stack-allocation via escape analysis.</p>
@@ -180,7 +180,7 @@ public final class ResolvedPipeline {
      * Executes the pre-composed pipeline with the given join point executor.
      *
      * <p>Per-call cost: one reverse loop over the pre-built action array,
-     * creating N+1 {@link InternalExecutor} lambdas (one terminal + one per
+     * creating N+1 {@link LayerTerminal} lambdas (one terminal + one per
      * layer). These lambdas capture at most two references each (action + next),
      * are confined to this call's stack frame, and are strong candidates for
      * JIT escape analysis — meaning they are typically stack-allocated rather
@@ -200,7 +200,7 @@ public final class ResolvedPipeline {
         long cid = state.chainId();
 
         // Terminal — wraps the actual method invocation
-        InternalExecutor<Void, Object> current = (c, ca, a) -> {
+        LayerTerminal<Void, Object> current = (c, ca, a) -> {
             try {
                 return coreExecutor.proceed();
             } catch (Throwable t) {
@@ -212,7 +212,7 @@ public final class ResolvedPipeline {
         // Each lambda captures only 2 references: the action and next.
         for (int i = actions.length - 1; i >= 0; i--) {
             LayerAction<Void, Object> action = actions[i];
-            InternalExecutor<Void, Object> next = current;
+            LayerTerminal<Void, Object> next = current;
             current = (c, ca, a) -> action.execute(c, ca, a, next);
         }
 

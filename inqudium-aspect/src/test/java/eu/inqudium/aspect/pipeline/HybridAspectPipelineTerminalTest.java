@@ -6,10 +6,10 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.DisplayName;
@@ -110,7 +110,7 @@ class HybridAspectPipelineTerminalTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             trace.add(name + ":sync-enter");
             try {
                 return next.execute(chainId, callId, arg);
@@ -121,7 +121,7 @@ class HybridAspectPipelineTerminalTest {
 
         @Override
         public CompletionStage<Object> executeAsync(long chainId, long callId, Void arg,
-                                                    InternalAsyncExecutor<Void, Object> next) {
+                                                    AsyncLayerTerminal<Void, Object> next) {
             trace.add(name + ":async-enter");
             return next.executeAsync(chainId, callId, arg)
                     .whenComplete((r, e) -> trace.add(name + ":async-exit"));

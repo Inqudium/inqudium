@@ -8,12 +8,12 @@ import eu.inqudium.config.snapshot.BulkheadSnapshot;
 import eu.inqudium.config.snapshot.CoDelStrategyConfig;
 import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 import eu.inqudium.core.log.LogAction;
 import eu.inqudium.core.log.Logger;
 import eu.inqudium.core.log.LoggerFactory;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.strategy.SemaphoreBulkheadStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("BulkheadHotPhase failure modes (2.12.4)")
 class BulkheadHotPhaseFailureModeTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static BulkheadSnapshot snapshotOf(
@@ -192,7 +192,7 @@ class BulkheadHotPhaseFailureModeTest {
      * interesting behaviour is the close throw and the call counter.
      */
     private static final class ThrowingCloseableStrategy
-            implements BlockingBulkheadStrategy, AutoCloseable {
+            implements TimedBulkheadStrategy, AutoCloseable {
 
         int closeInvocations;
 

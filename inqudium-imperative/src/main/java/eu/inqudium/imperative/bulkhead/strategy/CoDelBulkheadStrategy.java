@@ -1,6 +1,6 @@
 package eu.inqudium.imperative.bulkhead.strategy;
 
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 import eu.inqudium.core.log.Logger;
 import eu.inqudium.core.log.LoggerFactory;
@@ -24,7 +24,7 @@ import java.util.function.LongSupplier;
  *
  * @since 0.3.0
  */
-public final class CoDelBulkheadStrategy implements BlockingBulkheadStrategy {
+public final class CoDelBulkheadStrategy implements TimedBulkheadStrategy {
 
     private final Logger logger;
     private final int maxConcurrent;

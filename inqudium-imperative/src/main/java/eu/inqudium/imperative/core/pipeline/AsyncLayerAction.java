@@ -12,7 +12,7 @@ enum AsyncPassThrough implements AsyncLayerAction<Object, Object> {
 
     @Override
     public CompletionStage<Object> executeAsync(long chainId, long callId, Object argument,
-                                                InternalAsyncExecutor<Object, Object> next) {
+                                                AsyncLayerTerminal<Object, Object> next) {
         return next.executeAsync(chainId, callId, argument);
     }
 }
@@ -93,5 +93,5 @@ public interface AsyncLayerAction<A, R> {
      * entry (fast path), no callback is registered and the original is returned.
      */
     CompletionStage<R> executeAsync(long chainId, long callId, A argument,
-                                    InternalAsyncExecutor<A, R> next);
+                                    AsyncLayerTerminal<A, R> next);
 }

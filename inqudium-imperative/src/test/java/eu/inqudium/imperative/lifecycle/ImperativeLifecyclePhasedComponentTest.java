@@ -12,7 +12,7 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventExporterRegistry;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.event.InqPublisherConfig;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.imperative.lifecycle.spi.HotPhaseMarker;
 import eu.inqudium.imperative.lifecycle.spi.ImperativePhase;
@@ -107,7 +107,7 @@ class ImperativeLifecyclePhasedComponentTest {
             @Override
             public String execute(
                     long chainId, long callId, String argument,
-                    InternalExecutor<String, String> next) {
+                    LayerTerminal<String, String> next) {
                 return next.execute(chainId, callId, argument);
             }
         }
@@ -122,7 +122,7 @@ class ImperativeLifecyclePhasedComponentTest {
         }
     }
 
-    private static <A> InternalExecutor<A, A> identityExecutor() {
+    private static <A> LayerTerminal<A, A> identityExecutor() {
         return (chainId, callId, argument) -> argument;
     }
 
@@ -516,7 +516,7 @@ class ImperativeLifecyclePhasedComponentTest {
             // Given
             TestComponent component = new TestComponent(publisher, false, null);
             AtomicReference<String> seenArgument = new AtomicReference<>();
-            InternalExecutor<String, String> next = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 seenArgument.set(arg);
                 return arg.toUpperCase();
             };
@@ -534,7 +534,7 @@ class ImperativeLifecyclePhasedComponentTest {
             // Given
             TestComponent component = new TestComponent(publisher, false, null);
             AtomicReference<long[]> seenIds = new AtomicReference<>();
-            InternalExecutor<String, String> next = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> next = (chainId, callId, arg) -> {
                 seenIds.set(new long[]{chainId, callId});
                 return arg;
             };
@@ -598,7 +598,7 @@ class ImperativeLifecyclePhasedComponentTest {
                 @Override
                 public String execute(
                         long chainId, long callId, String argument,
-                        InternalExecutor<String, String> next) {
+                        LayerTerminal<String, String> next) {
                     return next.execute(chainId, callId, argument);
                 }
             }

@@ -62,7 +62,7 @@ class AsyncPipelineTerminalTest {
             @Override
             public CompletionStage<Object> executeAsync(
                     long chainId, long callId, Void arg,
-                    InternalAsyncExecutor<Void, Object> next) {
+                    AsyncLayerTerminal<Void, Object> next) {
                 return CompletableFuture.completedFuture(fixedResult);
             }
         };
@@ -92,7 +92,7 @@ class AsyncPipelineTerminalTest {
             @Override
             public CompletionStage<Object> executeAsync(
                     long chainId, long callId, Void arg,
-                    InternalAsyncExecutor<Void, Object> next) {
+                    AsyncLayerTerminal<Void, Object> next) {
                 throw exception;
             }
         };
@@ -139,7 +139,7 @@ class AsyncPipelineTerminalTest {
         @Override
         public CompletionStage<Object> executeAsync(
                 long chainId, long callId, Void arg,
-                InternalAsyncExecutor<Void, Object> next) {
+                AsyncLayerTerminal<Void, Object> next) {
             trace.add(name + ":enter");
             return next.executeAsync(chainId, callId, arg)
                     .whenComplete((result, error) -> trace.add(name + ":exit"));

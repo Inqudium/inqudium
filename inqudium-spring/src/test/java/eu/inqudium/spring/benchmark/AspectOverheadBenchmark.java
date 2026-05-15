@@ -1,6 +1,7 @@
 package eu.inqudium.spring.benchmark;
 
 import eu.inqudium.aspect.pipeline.AspectLayerProvider;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -133,7 +134,7 @@ import java.util.concurrent.TimeUnit;
  * than the &plusmn;7&ndash;15 seen elsewhere), and occasionally the
  * absolute allocation drops below what the layer count would predict. This
  * is the signature of C2's escape analysis successfully stack-allocating
- * the {@link eu.inqudium.core.pipeline.InternalExecutor} lambdas for that
+ * the {@link LayerTerminal} lambdas for that
  * variant &mdash; the per-iteration allocation becomes fully deterministic.</p>
  *
  * <p><strong>Which variant gets this treatment is not stable between runs.</strong>

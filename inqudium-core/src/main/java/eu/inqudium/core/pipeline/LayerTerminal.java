@@ -25,7 +25,7 @@ package eu.inqudium.core.pipeline;
  *            {@link Runnable}, or the output type for
  *            {@link java.util.function.Supplier}/{@link java.util.function.Function})
  */
-public interface InternalExecutor<A, R> {
+public interface LayerTerminal<A, R> {
 
     /**
      * Executes this layer's logic and propagates to the next layer in the chain.

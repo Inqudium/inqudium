@@ -7,9 +7,9 @@ import eu.inqudium.core.element.InqElementRegistry;
 import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -94,7 +94,7 @@ class InqShieldAspectPlainSpringTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             TRACE.add(name + ":sync-enter");
             try {
                 return next.execute(chainId, callId, arg);
@@ -105,7 +105,7 @@ class InqShieldAspectPlainSpringTest {
 
         @Override
         public CompletionStage<Object> executeAsync(long chainId, long callId, Void arg,
-                                                    InternalAsyncExecutor<Void, Object> next) {
+                                                    AsyncLayerTerminal<Void, Object> next) {
             TRACE.add(name + ":async-enter");
             return next.executeAsync(chainId, callId, arg)
                     .whenComplete((r, e) -> TRACE.add(name + ":async-exit"));

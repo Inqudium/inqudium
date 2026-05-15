@@ -2,7 +2,7 @@ package eu.inqudium.core.pipeline.function;
 
 import eu.inqudium.core.pipeline.BaseWrapper;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.Throws;
 
@@ -14,7 +14,7 @@ import java.util.concurrent.CompletionException;
  *
  * <p>{@code Callable} differs from {@code Supplier} in that it declares
  * {@code throws Exception}. This creates a challenge for the pipeline, because
- * {@link LayerAction} and {@link InternalExecutor} do not declare checked
+ * {@link LayerAction} and {@link LayerTerminal} do not declare checked
  * exceptions. The solution is a two-phase transport mechanism implemented
  * entirely via {@link Throws}:</p>
  *
@@ -76,9 +76,9 @@ public class CallableWrapper<V>
      *
      * @param delegate the real callable to invoke at the end of the chain
      * @param <V>      the callable's return type
-     * @return a terminal {@link InternalExecutor} with checked-exception wrapping
+     * @return a terminal {@link LayerTerminal} with checked-exception wrapping
      */
-    private static <V> InternalExecutor<Void, V> coreFor(Callable<V> delegate) {
+    private static <V> LayerTerminal<Void, V> coreFor(Callable<V> delegate) {
         return (chainId, callId, arg) -> {
             try {
                 return delegate.call();

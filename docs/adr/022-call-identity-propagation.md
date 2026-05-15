@@ -89,7 +89,7 @@ passed as explicit parameters on every chain step:
 The authoritative types are:
 
 ```java
-// eu.inqudium.core.pipeline.InternalExecutor
+// eu.inqudium.core.pipeline.LayerTerminal
 public interface InternalExecutor<A, R> {
     R execute(long chainId, long callId, A argument);
 }

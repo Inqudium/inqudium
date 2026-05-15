@@ -29,7 +29,7 @@ import java.util.function.LongSupplier;
  * so threads calling different chains never contend on a single counter
  * cache-line. The supplier is invoked once per invocation by the outermost
  * layer; inner layers receive the resulting call ID as a primitive
- * parameter through the {@link InternalExecutor} chain.</p>
+ * parameter through the {@link LayerTerminal} chain.</p>
  *
  * @param <T> the delegate type this wrapper wraps around (e.g. {@code Runnable},
  *            {@code Supplier<T>}, or another wrapper)

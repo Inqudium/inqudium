@@ -12,7 +12,7 @@ import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.LimitAlgorithm;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
-import eu.inqudium.core.element.bulkhead.strategy.AdaptiveNonBlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.AdaptiveInstantBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.AdaptiveBulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.CoDelBulkheadStrategy;
@@ -105,7 +105,7 @@ class BulkheadStrategyFactoryTest {
                     snapshotWith(new AdaptiveNonBlockingStrategyConfig(aimd)),
                     defaultGeneral());
 
-            assertThat(result).isInstanceOf(AdaptiveNonBlockingBulkheadStrategy.class);
+            assertThat(result).isInstanceOf(AdaptiveInstantBulkheadStrategy.class);
         }
 
         @Test
@@ -119,7 +119,7 @@ class BulkheadStrategyFactoryTest {
                     snapshotWith(new AdaptiveNonBlockingStrategyConfig(vegas)),
                     defaultGeneral());
 
-            assertThat(result).isInstanceOf(AdaptiveNonBlockingBulkheadStrategy.class);
+            assertThat(result).isInstanceOf(AdaptiveInstantBulkheadStrategy.class);
         }
     }
 

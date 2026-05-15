@@ -4,14 +4,13 @@ import eu.inqudium.config.Inqudium;
 import eu.inqudium.config.runtime.ComponentRemovedException;
 import eu.inqudium.config.runtime.InqRuntime;
 import eu.inqudium.config.validation.BuildReport;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
-import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Concurrent removal and snapshot patch on the bulkhead")
 class BulkheadConcurrentRemovalAndPatchTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     @Nested

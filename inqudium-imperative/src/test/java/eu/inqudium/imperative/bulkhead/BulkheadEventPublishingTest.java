@@ -1,7 +1,6 @@
 package eu.inqudium.imperative.bulkhead;
 
 import eu.inqudium.config.live.LiveContainer;
-import eu.inqudium.config.patch.ComponentPatch;
 import eu.inqudium.config.snapshot.BulkheadEventConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
 import eu.inqudium.config.snapshot.GeneralSnapshot;
@@ -16,10 +15,10 @@ import eu.inqudium.core.event.InqEventExporterRegistry;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.event.InqPublisherConfig;
 import eu.inqudium.core.log.LoggerFactory;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.core.time.InqNanoTimeSource;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -91,7 +90,7 @@ class BulkheadEventPublishingTest {
                 new SemaphoreStrategyConfig());
     }
 
-    private static <A> InternalExecutor<A, A> identity() {
+    private static <A> LayerTerminal<A, A> identity() {
         return (chainId, callId, arg) -> arg;
     }
 
@@ -214,7 +213,7 @@ class BulkheadEventPublishingTest {
                     new LiveContainer<>(snapshot(events, Duration.ZERO));
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
 
-            InternalExecutor<String, String> failing = (chainId, callId, arg) -> {
+            LayerTerminal<String, String> failing = (chainId, callId, arg) -> {
                 throw new RuntimeException("boom");
             };
 
@@ -245,7 +244,7 @@ class BulkheadEventPublishingTest {
 
             CountDownLatch holding = new CountDownLatch(1);
             CountDownLatch firstAcquired = new CountDownLatch(1);
-            InternalExecutor<String, String> blocking = (cid, callId, arg) -> {
+            LayerTerminal<String, String> blocking = (cid, callId, arg) -> {
                 firstAcquired.countDown();
                 try {
                     holding.await(5, TimeUnit.SECONDS);
@@ -297,7 +296,7 @@ class BulkheadEventPublishingTest {
             // When — first nanos sample returns 100, second returns 350; the difference is the
             // recorded wait duration.
             nanos.set(100L);
-            InternalExecutor<String, String> bumpClockThenIdentity = (cid, callId, arg) -> {
+            LayerTerminal<String, String> bumpClockThenIdentity = (cid, callId, arg) -> {
                 nanos.set(350L);
                 return arg;
             };
@@ -404,7 +403,7 @@ class BulkheadEventPublishingTest {
             InqBulkhead<String, String> bulkhead = newBulkhead(live);
 
             CompletableFuture<String> downstream = new CompletableFuture<>();
-            InternalAsyncExecutor<String, String> next = (chainId, callId, arg) -> downstream;
+            AsyncLayerTerminal<String, String> next = (chainId, callId, arg) -> downstream;
 
             // When — start phase publishes the two acquire events on the calling thread
             CompletionStage<String> result = bulkhead.executeAsync(7L, 11L, "x", next);

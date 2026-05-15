@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Lock-free, non-blocking adaptive bulkhead strategy for reactive and coroutine paradigms.
  *
- * <p>Combines the CAS-based permit management of {@link AtomicNonBlockingBulkheadStrategy}
+ * <p>Combines the CAS-based permit management of {@link AtomicInstantBulkheadStrategy}
  * with a dynamic concurrency limit from a pluggable {@link InqLimitAlgorithm} (AIMD, Vegas).
  *
  * <h2>How it works</h2>
@@ -57,10 +57,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * (CAS-based internally). No coordination between the two is needed because the
  * CAS loop re-reads the limit on every iteration.
  *
- * @see AtomicNonBlockingBulkheadStrategy
+ * @see AtomicInstantBulkheadStrategy
  * @since 0.3.0
  */
-public final class AdaptiveNonBlockingBulkheadStrategy implements NonBlockingBulkheadStrategy {
+public final class AdaptiveInstantBulkheadStrategy implements InstantBulkheadStrategy {
 
     private final InqLimitAlgorithm limitAlgorithm;
     private final AtomicInteger activeCalls = new AtomicInteger(0);
@@ -71,7 +71,7 @@ public final class AdaptiveNonBlockingBulkheadStrategy implements NonBlockingBul
      * @param limitAlgorithm the algorithm computing the dynamic concurrency limit
      *                       (e.g., {@link AimdLimitAlgorithm}, {@link VegasLimitAlgorithm})
      */
-    public AdaptiveNonBlockingBulkheadStrategy(InqLimitAlgorithm limitAlgorithm) {
+    public AdaptiveInstantBulkheadStrategy(InqLimitAlgorithm limitAlgorithm) {
         this.limitAlgorithm = Objects.requireNonNull(limitAlgorithm, "limitAlgorithm must not be null");
     }
 

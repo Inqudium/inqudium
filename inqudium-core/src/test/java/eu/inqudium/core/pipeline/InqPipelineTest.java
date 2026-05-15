@@ -59,7 +59,7 @@ class InqPipelineTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             return next.execute(chainId, callId, arg);
         }
     }
@@ -96,7 +96,7 @@ class InqPipelineTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             trace.add(name + ":enter");
             try {
                 return next.execute(chainId, callId, arg);

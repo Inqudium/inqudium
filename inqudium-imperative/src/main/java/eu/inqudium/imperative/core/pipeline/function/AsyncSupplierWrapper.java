@@ -4,7 +4,7 @@ import eu.inqudium.core.pipeline.function.SupplierWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncBaseWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
@@ -34,7 +34,7 @@ public class AsyncSupplierWrapper<T>
         this(name, delegate, AsyncLayerAction.passThrough());
     }
 
-    private static <T> InternalAsyncExecutor<Void, T> coreFor(Supplier<CompletionStage<T>> delegate) {
+    private static <T> AsyncLayerTerminal<Void, T> coreFor(Supplier<CompletionStage<T>> delegate) {
         return (chainId, callId, arg) -> delegate.get();
     }
 
