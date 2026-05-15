@@ -2,7 +2,7 @@ package eu.inqudium.imperative.bulkhead;
 
 import eu.inqudium.config.dsl.GeneralSnapshotBuilder;
 import eu.inqudium.config.live.LiveContainer;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadEventConfig;
@@ -118,7 +118,7 @@ class BulkheadHotPhaseFeedbackTest {
             LimitAlgorithm aimd = new AimdLimitAlgorithmConfig(
                     1, 1, 100, 0.5,
                     Duration.ofMillis(1), 0.5, false, 1.0);
-            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveNonBlockingStrategyConfig(aimd), 1);
+            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveInstantStrategyConfig(aimd), 1);
 
             // When
             bh.execute(1L, 1L, "x", IDENTITY);
@@ -421,7 +421,7 @@ class BulkheadHotPhaseFeedbackTest {
             LimitAlgorithm aimd = new AimdLimitAlgorithmConfig(
                     11, 1, 100, 0.5,
                     Duration.ofSeconds(1), 0.5, true, 0.0);
-            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveNonBlockingStrategyConfig(aimd), 50);
+            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveInstantStrategyConfig(aimd), 50);
 
             // When / Then
             assertThat(bh.availablePermits()).isEqualTo(11);
@@ -434,7 +434,7 @@ class BulkheadHotPhaseFeedbackTest {
                     9, 1, 100,
                     Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(3),
                     0.05, 0.0);
-            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveNonBlockingStrategyConfig(vegas), 50);
+            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveInstantStrategyConfig(vegas), 50);
 
             // When / Then
             assertThat(bh.availablePermits()).isEqualTo(9);
@@ -452,7 +452,7 @@ class BulkheadHotPhaseFeedbackTest {
 
             assertThat(newBulkhead(new SemaphoreStrategyConfig(), 5).concurrentCalls()).isZero();
             assertThat(newBulkhead(new AdaptiveStrategyConfig(aimd), 5).concurrentCalls()).isZero();
-            assertThat(newBulkhead(new AdaptiveNonBlockingStrategyConfig(aimd), 5).concurrentCalls())
+            assertThat(newBulkhead(new AdaptiveInstantStrategyConfig(aimd), 5).concurrentCalls())
                     .isZero();
         }
     }

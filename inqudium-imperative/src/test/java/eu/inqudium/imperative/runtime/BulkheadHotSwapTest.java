@@ -5,7 +5,7 @@ import eu.inqudium.config.lifecycle.ChangeDecision;
 import eu.inqudium.config.runtime.ComponentKey;
 import eu.inqudium.config.runtime.ImperativeTag;
 import eu.inqudium.config.runtime.InqRuntime;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.CoDelStrategyConfig;
@@ -436,7 +436,7 @@ class BulkheadHotSwapTest {
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
                 bh.execute(1L, 1L, "warm", IDENTITY);
                 assertThat(bh.snapshot().strategy())
-                        .isInstanceOf(AdaptiveNonBlockingStrategyConfig.class);
+                        .isInstanceOf(AdaptiveInstantStrategyConfig.class);
                 assertThat(bh.availablePermits()).isEqualTo(5);
 
                 BuildReport report = runtime.update(u -> u.imperative(im -> im

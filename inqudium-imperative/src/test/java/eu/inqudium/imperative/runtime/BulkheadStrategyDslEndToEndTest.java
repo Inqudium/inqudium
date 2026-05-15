@@ -4,7 +4,7 @@ import eu.inqudium.config.Inqudium;
 import eu.inqudium.config.runtime.ComponentKey;
 import eu.inqudium.config.runtime.ImperativeTag;
 import eu.inqudium.config.runtime.InqRuntime;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
@@ -93,7 +93,7 @@ class BulkheadStrategyDslEndToEndTest {
                                     .initialLimit(11)))))
                     .build()) {
 
-                AdaptiveNonBlockingStrategyConfig nb = (AdaptiveNonBlockingStrategyConfig)
+                AdaptiveInstantStrategyConfig nb = (AdaptiveInstantStrategyConfig)
                         runtime.imperative().bulkhead("inventory").snapshot().strategy();
                 VegasLimitAlgorithmConfig vegas = (VegasLimitAlgorithmConfig) nb.algorithm();
                 assertThat(vegas.initialLimit()).isEqualTo(11);

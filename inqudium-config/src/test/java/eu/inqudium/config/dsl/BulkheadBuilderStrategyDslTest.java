@@ -1,7 +1,7 @@
 package eu.inqudium.config.dsl;
 
 import eu.inqudium.config.runtime.ImperativeTag;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadEventConfig;
@@ -204,8 +204,8 @@ class BulkheadBuilderStrategyDslTest {
             TestBuilder b = new TestBuilder("inventory");
             b.balanced().adaptiveNonBlocking(a -> a.aimd(x -> x.initialLimit(11)));
 
-            AdaptiveNonBlockingStrategyConfig nb =
-                    (AdaptiveNonBlockingStrategyConfig) snapshotFor(b).strategy();
+            AdaptiveInstantStrategyConfig nb =
+                    (AdaptiveInstantStrategyConfig) snapshotFor(b).strategy();
             AimdLimitAlgorithmConfig aimd =
                     (AimdLimitAlgorithmConfig) nb.algorithm();
             assertThat(aimd.initialLimit()).isEqualTo(11);
@@ -216,8 +216,8 @@ class BulkheadBuilderStrategyDslTest {
             TestBuilder b = new TestBuilder("inventory");
             b.balanced().adaptiveNonBlocking(a -> a.vegas(v -> v.maxLimit(777)));
 
-            AdaptiveNonBlockingStrategyConfig nb =
-                    (AdaptiveNonBlockingStrategyConfig) snapshotFor(b).strategy();
+            AdaptiveInstantStrategyConfig nb =
+                    (AdaptiveInstantStrategyConfig) snapshotFor(b).strategy();
             VegasLimitAlgorithmConfig vegas = (VegasLimitAlgorithmConfig) nb.algorithm();
             assertThat(vegas.maxLimit()).isEqualTo(777);
         }

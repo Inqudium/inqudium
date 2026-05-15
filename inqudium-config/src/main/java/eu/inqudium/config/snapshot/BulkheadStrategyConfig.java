@@ -20,5 +20,5 @@ public sealed interface BulkheadStrategyConfig
         permits SemaphoreStrategyConfig,
                 CoDelStrategyConfig,
                 AdaptiveStrategyConfig,
-                AdaptiveNonBlockingStrategyConfig {
+        AdaptiveInstantStrategyConfig {
 }

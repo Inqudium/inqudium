@@ -122,8 +122,8 @@ class BulkheadStrategyConfigTest {
         @Test
         void should_carry_the_algorithm_through_construction() {
             LimitAlgorithm algo = vegas();
-            AdaptiveNonBlockingStrategyConfig config =
-                    new AdaptiveNonBlockingStrategyConfig(algo);
+            AdaptiveInstantStrategyConfig config =
+                    new AdaptiveInstantStrategyConfig(algo);
 
             assertThat(config.algorithm()).isSameAs(algo);
         }
@@ -131,7 +131,7 @@ class BulkheadStrategyConfigTest {
         @Test
         void should_reject_null_algorithm() {
             assertThatNullPointerException()
-                    .isThrownBy(() -> new AdaptiveNonBlockingStrategyConfig(null))
+                    .isThrownBy(() -> new AdaptiveInstantStrategyConfig(null))
                     .withMessageContaining("algorithm");
         }
 
@@ -141,8 +141,8 @@ class BulkheadStrategyConfigTest {
             // implementations; sealed-type pattern matching must distinguish them.
             LimitAlgorithm algo = aimd();
             AdaptiveStrategyConfig blocking = new AdaptiveStrategyConfig(algo);
-            AdaptiveNonBlockingStrategyConfig nonBlocking =
-                    new AdaptiveNonBlockingStrategyConfig(algo);
+            AdaptiveInstantStrategyConfig nonBlocking =
+                    new AdaptiveInstantStrategyConfig(algo);
 
             assertThat((BulkheadStrategyConfig) blocking)
                     .isNotEqualTo(nonBlocking);

@@ -231,13 +231,13 @@ Five concrete strategies implement the contract hierarchy. Their distribution ac
 "no blocking in core" architectural rule: paradigm-agnostic strategies live in `inqudium-core`,
 imperative-specific (potentially blocking) strategies live in `inqudium-imperative`.
 
-| Strategy                            | Module                  | Contract                                              | Acquire mechanism                                  |
-|-------------------------------------|-------------------------|-------------------------------------------------------|----------------------------------------------------|
-| `AtomicInstantBulkheadStrategy`     | `inqudium-core`         | `InstantBulkheadStrategy`                             | CAS loop on a single `AtomicInteger`               |
-| `AdaptiveInstantBulkheadStrategy`   | `inqudium-core`         | `InstantBulkheadStrategy`                             | CAS loop reading the algorithm's current limit     |
-| `SemaphoreBulkheadStrategy`         | `inqudium-imperative`   | `TimedBulkheadStrategy`                               | Fair `Semaphore.tryAcquire(timeout, NANOSECONDS)`  |
-| `AdaptiveBulkheadStrategy`          | `inqudium-imperative`   | `TimedBulkheadStrategy`                               | `Condition.awaitNanos(long)` under a `ReentrantLock` |
-| `CoDelBulkheadStrategy`             | `inqudium-imperative`   | `TimedBulkheadStrategy`                               | `Condition.awaitNanos` + sojourn-time evaluation   |
+| Strategy                            | Module                  | Contract                    | Acquire mechanism                                    |
+|-------------------------------------|-------------------------|-----------------------------|------------------------------------------------------|
+| `AtomicInstantBulkheadStrategy`     | `inqudium-core`         | `InstantBulkheadStrategy`   | CAS loop on a single `AtomicInteger`                 |
+| `AdaptiveInstantBulkheadStrategy`   | `inqudium-core`         | `InstantBulkheadStrategy`   | CAS loop reading the algorithm's current limit       |
+| `SemaphoreBulkheadStrategy`         | `inqudium-imperative`   | `TimedBulkheadStrategy`     | Fair `Semaphore.tryAcquire(timeout, NANOSECONDS)`    |
+| `AdaptiveBulkheadStrategy`          | `inqudium-imperative`   | `TimedBulkheadStrategy`     | `Condition.awaitNanos(long)` under a `ReentrantLock` |
+| `CoDelBulkheadStrategy`             | `inqudium-imperative`   | `TimedBulkheadStrategy`     | `Condition.awaitNanos` + sojourn-time evaluation     |
 
 #### Static strategies
 
@@ -344,7 +344,7 @@ Strategy configuration is expressed as a sealed-type discriminator:
 ```java
 public sealed interface BulkheadStrategyConfig
         permits SemaphoreStrategyConfig, CoDelStrategyConfig, AdaptiveStrategyConfig,
-                AdaptiveNonBlockingStrategyConfig {
+                AdaptiveInstantStrategyConfig {
 }
 
 public record SemaphoreStrategyConfig() implements BulkheadStrategyConfig { }
@@ -373,10 +373,10 @@ public record AdaptiveStrategyConfig(
     }
 }
 
-public record AdaptiveNonBlockingStrategyConfig(
+public record AdaptiveInstantStrategyConfig(
     LimitAlgorithm algorithm
 ) implements BulkheadStrategyConfig {
-    public AdaptiveNonBlockingStrategyConfig {
+    public AdaptiveInstantStrategyConfig {
         Objects.requireNonNull(algorithm, "algorithm");
     }
 }
@@ -417,7 +417,7 @@ final class BulkheadStrategyFactory {
                     snapshot.maxConcurrentCalls(), c.targetDelay(), c.interval(), /* ... */);
             case AdaptiveStrategyConfig a -> new AdaptiveBulkheadStrategy(
                     snapshot.maxConcurrentCalls(), buildAlgorithm(a.algorithm()), /* ... */);
-            case AdaptiveNonBlockingStrategyConfig a -> new AdaptiveInstantBulkheadStrategy(
+            case AdaptiveInstantStrategyConfig a -> new AdaptiveInstantBulkheadStrategy(
                     snapshot.maxConcurrentCalls(), buildAlgorithm(a.algorithm()), /* ... */);
         };
     }

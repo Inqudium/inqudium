@@ -207,9 +207,9 @@ public abstract class BulkheadBuilderBase<P extends ParadigmTag> implements Bulk
 
     @Override
     public BulkheadBuilder<P> adaptiveNonBlocking(
-            Consumer<AdaptiveNonBlockingConfigBuilder> configurer) {
+            Consumer<AdaptiveInstantStrategyConfigBuilder> configurer) {
         Objects.requireNonNull(configurer, "configurer");
-        AdaptiveNonBlockingConfigBuilder sub = new AdaptiveNonBlockingConfigBuilder();
+        AdaptiveInstantStrategyConfigBuilder sub = new AdaptiveInstantStrategyConfigBuilder();
         configurer.accept(sub);
         patch.touchStrategy(sub.build());
         return this;

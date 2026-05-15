@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 /**
  * Coverage for the algorithm sub-builders ({@link AimdAlgorithmBuilder},
  * {@link VegasAlgorithmBuilder}). The builders are reachable only through
- * {@link AdaptiveConfigBuilder} / {@link AdaptiveNonBlockingConfigBuilder}; tests therefore
+ * {@link AdaptiveConfigBuilder} / {@link AdaptiveInstantStrategyConfigBuilder}; tests therefore
  * route through {@code AdaptiveConfigBuilder} as the public entry point and inspect the
  * resulting algorithm config.
  */

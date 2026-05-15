@@ -1,6 +1,6 @@
 package eu.inqudium.imperative.bulkhead;
 
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
@@ -75,7 +75,7 @@ final class BulkheadStrategyFactory {
             case AdaptiveStrategyConfig adaptive ->
                     new AdaptiveBulkheadStrategy(
                             buildAlgorithm(adaptive.algorithm(), nanoTimeSource));
-            case AdaptiveNonBlockingStrategyConfig nonBlocking ->
+            case AdaptiveInstantStrategyConfig nonBlocking ->
                     new AdaptiveInstantBulkheadStrategy(
                             buildAlgorithm(nonBlocking.algorithm(), nanoTimeSource));
         };

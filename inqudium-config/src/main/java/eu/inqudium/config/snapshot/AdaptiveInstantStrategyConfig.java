@@ -14,10 +14,10 @@ import java.util.Objects;
  *
  * @param algorithm the limit algorithm; non-null.
  */
-public record AdaptiveNonBlockingStrategyConfig(LimitAlgorithm algorithm)
+public record AdaptiveInstantStrategyConfig(LimitAlgorithm algorithm)
         implements BulkheadStrategyConfig {
 
-    public AdaptiveNonBlockingStrategyConfig {
+    public AdaptiveInstantStrategyConfig {
         Objects.requireNonNull(algorithm, "algorithm");
     }
 }
