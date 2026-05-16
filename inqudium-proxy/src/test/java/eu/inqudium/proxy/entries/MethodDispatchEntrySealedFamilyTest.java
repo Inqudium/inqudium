@@ -39,12 +39,30 @@ class MethodDispatchEntrySealedFamilyTest {
 
     @Test
     void should_remain_an_internal_interface_with_no_default_methods() throws NoSuchMethodException {
-        // Given / When
-        Method[] declared = MethodDispatchEntry.class.getDeclaredMethods();
+        // What is to be tested?
+        //   The interface defines exactly one abstract instance method,
+        //   `dispatch`. Static factory methods may exist (sub-step 3.8
+        //   added passThrough / defaultMethod / syncCache as
+        //   cross-package entry points for construction code) but no
+        //   default method may sneak in: default methods would invite
+        //   external implementations to inherit behaviour rather than
+        //   compose with the sealed family.
+        // How will the test case be deemed successful and why?
+        //   Among the declared instance (non-static) methods there is
+        //   exactly one, `dispatch`, and it is not default.
+        // Why is it important to test this test case?
+        //   The sealed-family dispatch contract is foundational; an
+        //   accidental default method would change the dispatch model
+        //   silently.
 
-        // Then — exactly one abstract method named `dispatch` with the
-        // signature spec'd in ARCHITECTURE.md §7.5.
-        assertThat(declared).hasSize(1);
+        // Given / When
+        Method[] instanceMethods = java.util.Arrays.stream(
+                        MethodDispatchEntry.class.getDeclaredMethods())
+                .filter(m -> !java.lang.reflect.Modifier.isStatic(m.getModifiers()))
+                .toArray(Method[]::new);
+
+        // Then
+        assertThat(instanceMethods).hasSize(1);
 
         Method dispatch = MethodDispatchEntry.class.getDeclaredMethod(
                 "dispatch", Object.class, InqInvocationHandler.class, Object[].class);

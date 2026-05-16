@@ -1,6 +1,11 @@
 package eu.inqudium.proxy.entries;
 
+import eu.inqudium.proxy.folding.FoldedSyncChain;
 import eu.inqudium.proxy.handler.InqInvocationHandler;
+import eu.inqudium.proxy.invocation.MethodInvoker;
+
+import java.lang.reflect.Method;
+import java.util.List;
 
 /**
  * The per-method dispatch strategy stored in the proxy's
@@ -48,4 +53,34 @@ public sealed interface MethodDispatchEntry
      */
     Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args)
             throws Throwable;
+
+    /**
+     * Creates a {@link PassThroughEntry} bound to {@code invoker}.
+     * Cross-package entry point for {@code construction/}; the
+     * permitted record itself stays package-private.
+     */
+    static MethodDispatchEntry passThrough(MethodInvoker invoker) {
+        return new PassThroughEntry(invoker);
+    }
+
+    /**
+     * Creates a {@link DefaultMethodEntry} for the given Java
+     * {@code default} method. Cross-package entry point for
+     * {@code construction/}; the permitted record itself stays
+     * package-private.
+     */
+    static MethodDispatchEntry defaultMethod(Method defaultMethod) {
+        return new DefaultMethodEntry(defaultMethod);
+    }
+
+    /**
+     * Creates a {@link SyncCacheEntry} carrying the pre-folded chain
+     * and the layer descriptions for introspection (ADR-039).
+     * Cross-package entry point for {@code construction/}; the
+     * permitted record itself stays package-private.
+     */
+    static MethodDispatchEntry syncCache(
+            FoldedSyncChain chain, List<String> layerDescriptions) {
+        return new SyncCacheEntry(chain, layerDescriptions);
+    }
 }
