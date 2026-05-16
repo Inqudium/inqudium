@@ -419,7 +419,7 @@ later refactor:
 * [x] 3.1 — Plan finalisation (2026-05-16, PR #62)
 * [x] 3.2 — Create inqudium-pipeline module + InqPipeline interface + builder (2026-05-16, PR #63)
 * [x] 3.3 — DetectionProxy + protect(Class<T>, T) stub + InqPipelineAnnotationEvaluator bridge (2026-05-16, PR #64)
-* [ ] 3.4 — Create inqudium-proxy module skeleton + commit ARCHITECTURE.md
+* [x] 3.4 — Create inqudium-proxy module skeleton + commit ARCHITECTURE.md (2026-05-16, PR #65)
 * [ ] 3.5 — Foundation: invocation primitives, exception classification
 * [ ] 3.6 — Dispatch entries part 1: sealed family + simple variants
 * [ ] 3.7 — Folding: SyncChainFolder + FoldedSyncChain + SyncCacheEntry
