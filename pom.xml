@@ -35,6 +35,7 @@
         <module>inqudium-bom</module>
         <module>inqudium-core</module>
         <module>inqudium-pipeline</module>
+        <module>inqudium-proxy</module>
         <module>inqudium-config</module>
         <module>inqudium-context-slf4j</module>
         <module>inqudium-kotlin</module>
