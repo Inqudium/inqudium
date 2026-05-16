@@ -23,6 +23,12 @@
             <artifactId>inqudium-core</artifactId>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-annotation</artifactId>
+            <version>${revision}</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
 </project>

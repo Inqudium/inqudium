@@ -42,6 +42,54 @@ public interface InqPipeline {
     List<InqElement> elements();
 
     /**
+     * Returns a JDK dynamic proxy that implements
+     * {@code serviceInterface} and routes every method invocation
+     * through the resilience elements declared in this pipeline. The
+     * proxy applies the elements according to the per-method plan
+     * computed by the annotation evaluator (ADR-036).
+     *
+     * <p>This default method requires {@code inqudium-proxy} on the
+     * classpath. The probe is performed by {@link DetectionProxy}; if
+     * the module is absent, an {@link IllegalStateException} is raised
+     * with a message pointing at the required dependency.</p>
+     *
+     * <p><strong>Sub-step 3.3 state:</strong> the actual delegation to
+     * {@code ProxyDispatcher.protect(...)} is not wired yet. At this
+     * sub-step the method always throws — either
+     * {@link IllegalStateException} (proxy module absent, the case at
+     * 3.3 because {@code inqudium-proxy} has not been created) or
+     * {@link UnsupportedOperationException} (proxy module present but
+     * delegation not yet implemented, the case from 3.4 onward until
+     * 3.9 lands).</p>
+     *
+     * @param serviceInterface  the interface the proxy will implement;
+     *                          must be an interface, not a concrete
+     *                          class
+     * @param target            the real implementation to which the
+     *                          proxy delegates after applying the
+     *                          pipeline
+     * @param <T>               the service interface type
+     * @return                  a proxy of {@code serviceInterface}
+     * @throws IllegalStateException        if the proxy module is not
+     *                                      on the classpath
+     * @throws UnsupportedOperationException if the proxy module is on
+     *                                      the classpath but delegation
+     *                                      has not been wired yet
+     */
+    default <T> T protect(Class<T> serviceInterface, T target) {
+        if (!DetectionProxy.isPresent()) {
+            throw new IllegalStateException(
+                    "ProxyDispatcher is not on the classpath. Add "
+                            + "inqudium-proxy as a runtime dependency to enable "
+                            + "proxy-based protection of service interfaces.");
+        }
+        throw new UnsupportedOperationException(
+                "Proxy delegation will be wired in sub-step 3.9. "
+                        + "DetectionProxy reports the proxy module is present, "
+                        + "but the delegation code has not yet been implemented.");
+    }
+
+    /**
      * Creates a new, single-use {@link InqPipelineBuilder}. Each call
      * returns a fresh builder; builders are not reusable after their
      * {@code build()} method returns.
