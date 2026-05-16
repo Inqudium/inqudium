@@ -17,8 +17,7 @@ import eu.inqudium.proxy.handler.InqInvocationHandler;
  *       {@code MethodPlan.PassThrough} (sub-step 3.6).</li>
  *   <li>{@link DefaultMethodEntry} — {@code InvocationHandler.invokeDefault}
  *       for unoverridden Java default methods (sub-step 3.6).</li>
- *   <li>{@code SyncCacheEntry} — folded sync chain, added in
- *       sub-step 3.7.</li>
+ *   <li>{@link SyncCacheEntry} — folded sync chain (sub-step 3.7).</li>
  *   <li>{@code ObjectMethodEntry} — {@code Object}-declared methods
  *       (equals, hashCode, toString, etc.), added in sub-step 3.10.</li>
  *   <li>{@code AsyncCacheEntry} — folded async chain, added in
@@ -31,7 +30,7 @@ import eu.inqudium.proxy.handler.InqInvocationHandler;
  * the type.</p>
  */
 public sealed interface MethodDispatchEntry
-        permits PassThroughEntry, DefaultMethodEntry {
+        permits PassThroughEntry, DefaultMethodEntry, SyncCacheEntry {
 
     /**
      * Dispatches the call to the entry's strategy and returns the
