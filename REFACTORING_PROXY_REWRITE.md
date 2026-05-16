@@ -416,7 +416,7 @@ later refactor:
 
 ## Completion log
 
-* [x] 3.1 — Plan finalisation (2026-05-16, PR #TBD)
+* [x] 3.1 — Plan finalisation (2026-05-16, PR #62)
 * [ ] 3.2 — Create inqudium-pipeline module + InqPipeline interface + builder
 * [ ] 3.3 — DetectionProxy + protect(Class<T>, T) stub + InqPipelineAnnotationEvaluator bridge
 * [ ] 3.4 — Create inqudium-proxy module skeleton + commit ARCHITECTURE.md
