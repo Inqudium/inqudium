@@ -33,6 +33,12 @@
             <artifactId>inqudium-annotation</artifactId>
             <version>${revision}</version>
             <scope>compile</scope>
+            <!--
+              Override the parent's <optional>true</optional>. The annotation module is
+              part of inqudium-proxy's visible toolchain, so downstream consumers
+              protecting annotated services need the annotations transitively.
+            -->
+            <optional>false</optional>
         </dependency>
         <!--
           Optional dependency: enables the async dispatch path landing in sub-step 3.11
