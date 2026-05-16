@@ -26,14 +26,15 @@ class MethodDispatchEntrySealedFamilyTest {
     }
 
     @Test
-    void should_initially_permit_passthrough_and_default_method_entries() {
+    void should_permit_passthrough_default_method_and_sync_cache_entries() {
         // Given / When
         Class<?>[] permits = MethodDispatchEntry.class.getPermittedSubclasses();
 
-        // Then — sub-step 3.6 lands exactly two permits. Sub-steps 3.7, 3.10
-        // and 3.11 grow the list; each of those sub-steps updates this test.
+        // Then — sub-step 3.7 grows the family to three permits.
+        // Sub-steps 3.10 and 3.11 grow the list further; each of those
+        // sub-steps updates this test.
         assertThat(permits).containsExactlyInAnyOrder(
-                PassThroughEntry.class, DefaultMethodEntry.class);
+                PassThroughEntry.class, DefaultMethodEntry.class, SyncCacheEntry.class);
     }
 
     @Test
