@@ -61,7 +61,9 @@ class ObjectMethodEntryTest {
         // Given
         Target target = new Target();
         InqInvocationHandler handler = new InqInvocationHandler(
-                1L, () -> 1L, target, Map.<Method, MethodDispatchEntry>of());
+                1L, () -> 1L, target,
+                Object.class, java.util.List.of(),
+                Map.<Method, MethodDispatchEntry>of());
         MethodDispatchEntry hashCodeEntry =
                 MethodDispatchEntry.objectMethod(ObjectMethodHandler.Kind.HASH_CODE);
         MethodDispatchEntry toStringEntry =

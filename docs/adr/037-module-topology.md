@@ -1,8 +1,37 @@
 # ADR-037: Module topology and integration dispatch
 
-**Status:** Proposed  
-**Date:** 2026-05-05  
+**Status:** Accepted  
+**Date:** 2026-05-17  
 **Deciders:** Core team
+
+## Implementation status
+
+**Accepted.** The module topology and class-loading discipline
+mandated by this ADR are realised in `inqudium-proxy`:
+
+- The module is split into `inqudium-pipeline` (mandatory),
+  `inqudium-annotation` (mandatory), `inqudium-imperative`
+  (optional `<optional>true</optional>` per §6), `inqudium-proxy`
+  itself, and `inqudium-core` (transitive)
+- `eu.inqudium.pipeline.DetectionProxy` and
+  `eu.inqudium.proxy.dispatch.DetectionAsync` implement the
+  presence-probe pattern (§4)
+- `eu.inqudium.pipeline.ProxyDelegation` is the reflective bridge
+  that avoids the Maven cycle between `inqudium-pipeline` and
+  `inqudium-proxy` (§5)
+- `eu.inqudium.proxy.construction.AsyncEntryBuilder` (introduced
+  in sub-step 3.13a) is the class-loading firewall that ensures
+  `MethodDispatchEntryFactory.class`'s `BootstrapMethods` attribute
+  contains no `inqudium-imperative` type. This realises §6's
+  "no async class loads on the sync-only path" invariant — a
+  contract the JVMS §5.4 mechanics of `invokedynamic` resolution
+  make subtle to satisfy (see `ARCHITECTURE.md` §13 for the
+  mechanism)
+
+Empirically verified by
+`eu.inqudium.proxy.discipline.ModuleLoadingDisciplineTest` (two
+URLClassLoader-isolated test methods) as permanent regression
+guards.
 
 ## Context
 

@@ -1,12 +1,32 @@
 # ADR-042: Pipeline contracts
 
-**Status:** Proposed  
-**Date:** 2026-05-14  
+**Status:** Accepted  
+**Date:** 2026-05-17  
 **Deciders:** Core team  
 **Related:** ADR-033 (Bulkhead lifecycle integration — the rules consolidated here originated there),
 ADR-029 (lifecycle implementation pattern — components that follow it use the contracts specified here),
 ADR-040 (`InqPipeline` composition model — `shield(...)` accepts implementations of these contracts),
 ADR-041 (pipeline composition ordering).
+
+## Implementation status
+
+**Accepted.** The contracts specified by this ADR — the layer-
+action / layer-terminal hierarchy and the per-paradigm decorator
+interfaces — are implemented:
+
+- `eu.inqudium.core.pipeline.LayerAction` / `LayerTerminal` — the
+  synchronous contracts (in `inqudium-core`)
+- `eu.inqudium.core.pipeline.InqDecorator` — the synchronous
+  paradigm interface (extends `LayerAction`)
+- `eu.inqudium.imperative.core.pipeline.AsyncLayerAction` /
+  `AsyncLayerTerminal` — the asynchronous contracts (in
+  `inqudium-imperative`)
+- `eu.inqudium.imperative.core.pipeline.InqAsyncDecorator` — the
+  async paradigm interface (extends `AsyncLayerAction`)
+
+The proxy's `SyncParadigmValidator` and `AsyncParadigmValidator`
+enforce that every element resolved for a service method
+implements the corresponding paradigm interface (ADR-035 §6).
 
 ## Context
 

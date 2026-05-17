@@ -1,8 +1,43 @@
 # ADR-035: Proxy integration architecture
 
-**Status:** Proposed  
-**Date:** 2026-05-05  
+**Status:** Accepted  
+**Date:** 2026-05-17  
 **Deciders:** Core team
+
+## Implementation status
+
+**Accepted** following the from-scratch rewrite of `inqudium-proxy`
+specified by this ADR. The implementation is documented in
+`inqudium-proxy/docs/ARCHITECTURE.md` (status: Stable) and was
+delivered across sub-steps 3.0–3.13a of the proxy rewrite plan.
+
+Key artefacts realising this ADR:
+
+- `eu.inqudium.proxy.ProxyDispatcher` — single public entry point
+  for `pipeline.protect(serviceInterface, target)`
+- `eu.inqudium.proxy.handler.InqInvocationHandler` — `InvocationHandler`
+  installed on every JDK proxy; hosts the dispatch hot path
+- `eu.inqudium.proxy.entries.MethodDispatchEntry` (sealed family
+  of five) — pre-built per-method dispatch logic: `SyncCacheEntry`,
+  `AsyncCacheEntry`, `PassThroughEntry`, `DefaultMethodEntry`,
+  `ObjectMethodEntry`
+- `eu.inqudium.proxy.folding.SyncChainFolder` /
+  `AsyncChainFolder` — closures-per-depth chain folding with
+  preserved retry semantics
+- `eu.inqudium.proxy.construction.ProxyBuilder` plus
+  `MethodDispatchEntryFactory` / `AsyncEntryBuilder` — the
+  construction-time orchestrator that consumes the annotation
+  evaluator's plans
+- `eu.inqudium.proxy.invocation.MethodInvoker` (sealed: MethodHandle
+  and reflective variants) — the actual reflective call to the
+  real target
+- `eu.inqudium.proxy.exception.ExceptionClassifier` — the ADR-035
+  §10 algorithm
+
+The legacy proxy implementation in `eu.inqudium.core.pipeline.proxy`
+is preserved untouched per the Strategy-G greenfield-parallel
+approach taken during the rewrite. Its removal is a separate
+refactor.
 
 ## Context
 

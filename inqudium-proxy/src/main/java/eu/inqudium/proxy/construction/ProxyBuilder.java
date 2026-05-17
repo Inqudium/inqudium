@@ -38,9 +38,11 @@ import java.util.Objects;
  *   <li>{@code InqAnnotationConfigurationException} from the
  *       evaluator (propagated unchanged).</li>
  *   <li>{@link IllegalStateException} from
- *       {@link SyncParadigmValidator} for paradigm mismatches.</li>
- *   <li>{@link UnsupportedOperationException} from the factory for
- *       async methods (sub-step 3.11 will land that path).</li>
+ *       {@link SyncParadigmValidator} or
+ *       {@link AsyncParadigmValidator} for paradigm mismatches, or
+ *       from {@link MethodDispatchEntryFactory} when an async method
+ *       is declared but {@code inqudium-imperative} is absent from
+ *       the classpath (ADR-037 §3).</li>
  * </ul>
  *
  * <p><strong>Internal API.</strong> Public for cross-package

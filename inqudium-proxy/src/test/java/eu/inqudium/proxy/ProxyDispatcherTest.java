@@ -6,12 +6,18 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.LayerTerminal;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
+import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 import eu.inqudium.pipeline.InqPipeline;
+import eu.inqudium.proxy.introspection.MethodLayers;
+import eu.inqudium.proxy.introspection.ProxyStackAdapter;
+import eu.inqudium.proxy.introspection.ProxyStackInfo;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +138,8 @@ class ProxyDispatcherTest {
 
     public interface AsyncService {
         CompletableFuture<String> asyncCall();
+
+        CompletableFuture<String> asyncBoom();
     }
 
     public static final class AsyncServiceImpl implements AsyncService {
@@ -139,6 +147,67 @@ class ProxyDispatcherTest {
         @InqBulkhead("orderBh")
         public CompletableFuture<String> asyncCall() {
             return CompletableFuture.completedFuture("done");
+        }
+
+        @Override
+        @InqBulkhead("orderBh")
+        public CompletableFuture<String> asyncBoom() {
+            CompletableFuture<String> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new IllegalStateException("async boom"));
+            return failed;
+        }
+    }
+
+    public static final class SyncThrowAsyncServiceImpl implements AsyncService {
+        @Override
+        @InqBulkhead("orderBh")
+        public CompletableFuture<String> asyncCall() {
+            throw new IllegalStateException("sync throw from async method");
+        }
+
+        @Override
+        public CompletableFuture<String> asyncBoom() {
+            return CompletableFuture.completedFuture("never");
+        }
+    }
+
+    /**
+     * Async-paradigm decorator fixture: transparent pass-through that
+     * bumps a counter. Mirrors {@link FakeBulkhead} on the async side.
+     */
+    static final class FakeAsyncBulkhead implements InqAsyncDecorator<Object, Object> {
+
+        private final String name;
+        private final AtomicInteger callCount = new AtomicInteger();
+
+        FakeAsyncBulkhead(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public eu.inqudium.core.element.InqElementType elementType() {
+            return eu.inqudium.core.element.InqElementType.BULKHEAD;
+        }
+
+        @Override
+        public InqEventPublisher eventPublisher() {
+            return null;
+        }
+
+        @Override
+        public CompletionStage<Object> executeAsync(long chainId, long callId, Object argument,
+                                                    AsyncLayerTerminal<Object, Object> next) {
+            callCount.incrementAndGet();
+            return next.executeAsync(chainId, callId, argument);
+        }
+
+        int callCount() {
+            return callCount.get();
         }
     }
 
@@ -201,6 +270,12 @@ class ProxyDispatcherTest {
     private static InqPipeline pipelineWithBulkhead() {
         return InqPipeline.builder()
                 .shield(new FakeBulkhead("orderBh"))
+                .build();
+    }
+
+    private static InqPipeline pipelineWithAsyncBulkhead() {
+        return InqPipeline.builder()
+                .shield(new FakeAsyncBulkhead("orderBh"))
                 .build();
     }
 
@@ -597,19 +672,231 @@ class ProxyDispatcherTest {
     }
 
     @Nested
-    class AsyncRejection {
+    class AsyncDispatch {
 
         @Test
-        void should_throw_unsupported_operation_for_an_async_method_during_construction() {
+        void should_build_a_proxy_for_a_service_interface_with_async_methods() {
+            // What is to be tested?
+            //   With inqudium-imperative on the classpath and an
+            //   async-paradigm element in the pipeline, ProxyDispatcher
+            //   must construct a working proxy for a service interface
+            //   that declares CompletionStage-returning methods. Pins
+            //   the 3.11 transition away from
+            //   UnsupportedOperationException.
+            // How will the test case be deemed successful and why?
+            //   protect(...) returns a non-null proxy instance assignable
+            //   to AsyncService. No exception is thrown.
+            // Why is it important to test this test case?
+            //   The construction-time happy-path for async — every
+            //   following test depends on this working.
+
             // Given
-            InqPipeline pipeline = pipelineWithBulkhead();
+            InqPipeline pipeline = pipelineWithAsyncBulkhead();
             AsyncServiceImpl target = new AsyncServiceImpl();
 
-            // When / Then — construction phase rejects async methods
-            // until sub-step 3.11 lands the async path.
-            assertThatThrownBy(() -> ProxyDispatcher.protect(pipeline, AsyncService.class, target))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("3.11");
+            // When
+            AsyncService proxy = ProxyDispatcher.protect(
+                    pipeline, AsyncService.class, target);
+
+            // Then
+            assertThat(proxy).isNotNull();
+        }
+
+        @Test
+        void should_execute_an_async_method_via_the_decorated_chain() throws Exception {
+            // What is to be tested?
+            //   The async method routes through the AsyncCacheEntry,
+            //   the layer fires, and the returned stage carries the
+            //   target's value. End-to-end exercise of the async
+            //   dispatch path.
+            // How will the test case be deemed successful and why?
+            //   The returned CompletionStage completes with "done" and
+            //   the bulkhead's call counter is incremented once.
+            // Why is it important to test this test case?
+            //   This is the central async happy-path on the dispatcher
+            //   level — equivalent to the SyncDispatch.
+            //   should_route_an_annotated_method test.
+
+            // Given
+            FakeAsyncBulkhead bulkhead = new FakeAsyncBulkhead("orderBh");
+            InqPipeline pipeline = InqPipeline.builder().shield(bulkhead).build();
+            AsyncServiceImpl target = new AsyncServiceImpl();
+            AsyncService proxy = ProxyDispatcher.protect(
+                    pipeline, AsyncService.class, target);
+
+            // When
+            String result = proxy.asyncCall().get();
+
+            // Then
+            assertThat(result).isEqualTo("done");
+            assertThat(bulkhead.callCount()).isEqualTo(1);
+        }
+
+        @Test
+        void should_complete_the_returned_stage_exceptionally_when_the_target_s_async_op_fails() {
+            // What is to be tested?
+            //   When the target returns an exceptionally-completed
+            //   stage, the proxy's caller observes that failure inside
+            //   the stage (not as a synchronous throw). The async
+            //   error channel must stay async.
+            // How will the test case be deemed successful and why?
+            //   The returned CompletableFuture is completed
+            //   exceptionally; calling .get() throws ExecutionException
+            //   whose cause is the target's IllegalStateException.
+            // Why is it important to test this test case?
+            //   Pins the two-channel separation (sync layer faults vs
+            //   async stage failures) for the end-to-end dispatch.
+
+            // Given
+            InqPipeline pipeline = pipelineWithAsyncBulkhead();
+            AsyncServiceImpl target = new AsyncServiceImpl();
+            AsyncService proxy = ProxyDispatcher.protect(
+                    pipeline, AsyncService.class, target);
+
+            // When
+            CompletableFuture<String> result = proxy.asyncBoom();
+
+            // Then
+            assertThat(result.isCompletedExceptionally()).isTrue();
+            assertThatThrownBy(result::get)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("async boom");
+        }
+
+        @Test
+        void should_wrap_a_sync_target_throw_in_a_failed_future() throws Exception {
+            // What is to be tested?
+            //   When the async-method body throws synchronously before
+            //   producing a stage, the caller still observes a
+            //   CompletionStage — the throwable is wrapped in
+            //   CompletableFuture.failedFuture by the folder's
+            //   terminal. The contract is that an async method always
+            //   returns a stage; sync-throws are surfaced as failed
+            //   stages, not as direct throws.
+            // How will the test case be deemed successful and why?
+            //   proxy.asyncCall() returns a non-null stage that is
+            //   completed exceptionally with the original throwable.
+            // Why is it important to test this test case?
+            //   This is the most user-visible aspect of the
+            //   single-channel async contract; a regression that let
+            //   the sync-throw escape would break every
+            //   stage.thenApply / .exceptionally chain at the caller.
+
+            // Given
+            InqPipeline pipeline = pipelineWithAsyncBulkhead();
+            SyncThrowAsyncServiceImpl target = new SyncThrowAsyncServiceImpl();
+            AsyncService proxy = ProxyDispatcher.protect(
+                    pipeline, AsyncService.class, target);
+
+            // When
+            CompletableFuture<String> result = proxy.asyncCall();
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.isCompletedExceptionally()).isTrue();
+            assertThatThrownBy(result::get)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("sync throw from async method");
+        }
+    }
+
+    @Nested
+    class Introspection {
+
+        @Test
+        void should_produce_a_proxy_that_proxy_stack_adapter_supports() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When / Then
+            assertThat(ProxyStackAdapter.supports(proxy)).isTrue();
+        }
+
+        @Test
+        void should_carry_the_constructed_stack_id_in_the_stack_info() {
+            // What is to be tested?
+            //   ProxyStackInfo.stackId() must equal the stackId
+            //   allocated by ProxyDispatcher for the proxy. We can't
+            //   directly probe the constructed stackId; instead we
+            //   build two proxies and assert their stackIds differ,
+            //   which is the observable evidence that the per-proxy
+            //   ID is honoured.
+            // How will the test case be deemed successful and why?
+            //   Two consecutively-built proxies report distinct,
+            //   positive stack IDs in their respective stack infos.
+            // Why is it important to test this test case?
+            //   Stack IDs are the primary diagnostic-correlation
+            //   handle; collisions would defeat ADR-034's purpose.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService firstProxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+            OrderService secondProxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo firstInfo = ProxyStackAdapter.inspect(firstProxy);
+            ProxyStackInfo secondInfo = ProxyStackAdapter.inspect(secondProxy);
+
+            // Then
+            assertThat(firstInfo.stackId()).isPositive();
+            assertThat(secondInfo.stackId()).isPositive();
+            assertThat(firstInfo.stackId()).isNotEqualTo(secondInfo.stackId());
+        }
+
+        @Test
+        void should_carry_the_service_interface_as_target_type_in_the_stack_info() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo info = ProxyStackAdapter.inspect(proxy);
+
+            // Then
+            assertThat(info.targetType()).contains(OrderService.class);
+        }
+
+        @Test
+        void should_include_layer_descriptions_for_decorated_methods_in_the_stack_info() {
+            // What is to be tested?
+            //   The @InqBulkhead-annotated `greet` method routes through
+            //   a SyncCacheEntry whose layerDescriptions carry the
+            //   pipeline layer's name. The stack info must surface
+            //   that string while pass-through methods (`getOrder`,
+            //   `defaultGreeting`, `throws*`) and Object methods report
+            //   an empty layer list.
+            // How will the test case be deemed successful and why?
+            //   The MethodLayers entry for `greet(String)` has a
+            //   non-empty layerDescriptions list; every other entry
+            //   has an empty list.
+            // Why is it important to test this test case?
+            //   Pins the contract that decorated methods are visible
+            //   to introspection (ADR-039), while non-decorated ones
+            //   are explicitly empty. A regression that mixed the two
+            //   would obscure the resilience topology.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo info = ProxyStackAdapter.inspect(proxy);
+            MethodLayers greetLayers = info.methodLayers().stream()
+                    .filter(ml -> ml.methodSignature().equals("OrderService.greet(String)"))
+                    .findFirst()
+                    .orElseThrow();
+
+            // Then
+            assertThat(greetLayers.layerDescriptions()).isNotEmpty();
+            assertThat(info.methodLayers().stream()
+                    .filter(ml -> !ml.methodSignature().equals("OrderService.greet(String)")))
+                    .allSatisfy(ml -> assertThat(ml.layerDescriptions()).isEmpty());
         }
     }
 }

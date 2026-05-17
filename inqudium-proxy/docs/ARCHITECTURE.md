@@ -1,7 +1,11 @@
 # `inqudium-proxy` — Architecture Design (v2)
 
-**Status:** Draft, intended as the design basis for the from-scratch rewrite of `inqudium-proxy` mandated by ADR-035.
-**Date:** 2026-05-16 (initial); updated 2026-05-17 to reflect implementation through sub-step 3.9.
+**Status:** Stable, reflects the implementation as of the proxy
+rewrite completion (sub-steps 3.0–3.14 of the now-deleted
+`REFACTORING_PROXY_REWRITE.md`).
+**Date:** 2026-05-16 (initial); updated 2026-05-17 to reflect
+implementation through sub-step 3.9; finalised on 2026-05-17
+at proxy-rewrite completion.
 **Supersedes:** v1 of this document.
 
 **Authoritative references:** ADR-035 (proxy architecture), ADR-036 (annotation model — implemented in `eu.inqudium.annotation.evaluator`), ADR-037 (module topology), ADR-039 (uniform stack introspection), ADR-040 (pipeline composition model), ADR-041 (pipeline composition ordering), ADR-042 (pipeline contracts), ADR-034 (correlation IDs), ADR-029 (lifecycle implementation pattern).
@@ -90,13 +94,14 @@ eu.inqudium.proxy
 │   ├── InqInvocationHandler           //   public — the handler installed on every proxy
 │   ├── PerProxyCache                  //   package-private — method-to-entry lookup
 │   ├── ArgNormalizer                  //   package-private — null Object[] → empty array
-│   └── ObjectMethodHandler            //   public — equals / hashCode / toString  (planned 3.10)
+│   └── ObjectMethodHandler            //   public — equals / hashCode / toString
 │
 ├── construction/                      // Public/package-private mix — phase 1 + 2 orchestration
 │   ├── ProxyBuilder                   //   public — orchestrates evaluator call + entry construction
 │   ├── ElementResolver                //   public — maps element names to InqElement instances
 │   ├── SyncParadigmValidator          //   package-private — sync paradigm check
-│   ├── AsyncParadigmValidator         //   package-private — async paradigm check  (planned 3.11)
+│   ├── AsyncParadigmValidator         //   package-private — async paradigm check
+│   ├── AsyncEntryBuilder              //   public — async-build flow (3.13a; extracted from the factory)
 │   └── MethodDispatchEntryFactory     //   public — classifies methods and builds entries
 │
 ├── entries/                           // Public sealed interface + package-private records
@@ -104,18 +109,18 @@ eu.inqudium.proxy
 │   ├── SyncCacheEntry                 //   package-private record — folded sync chain
 │   ├── PassThroughEntry               //   package-private record — direct target invocation
 │   ├── DefaultMethodEntry             //   package-private record — InvocationHandler.invokeDefault
-│   ├── ObjectMethodEntry              //   package-private record — dispatches to ObjectMethodHandler  (planned 3.10)
-│   └── AsyncCacheEntry                //   package-private record — folded async chain  (planned 3.11)
+│   ├── ObjectMethodEntry              //   package-private record — dispatches to ObjectMethodHandler
+│   └── AsyncCacheEntry                //   package-private record — folded async chain
 │
 ├── folding/                           // Public — chain materialisation
 │   ├── SyncChainFolder                //   public — builds FoldedSyncChain (closures-per-depth)
 │   ├── FoldedSyncChain                //   public @FunctionalInterface — the per-method invocation closure
-│   ├── AsyncChainFolder               //   public — builds FoldedAsyncChain  (planned 3.11)
-│   └── FoldedAsyncChain               //   public @FunctionalInterface — async counterpart  (planned 3.11)
+│   ├── AsyncChainFolder               //   public — builds FoldedAsyncChain
+│   └── FoldedAsyncChain               //   public @FunctionalInterface — async counterpart
 │
 ├── dispatch/                          // Public — paradigm classification
 │   ├── ParadigmDetector               //   public — isAsyncMethod(Method); JDK types only
-│   └── DetectionAsync                 //   public — probes for inqudium-imperative  (planned 3.11)
+│   └── DetectionAsync                 //   public — probes for inqudium-imperative
 │
 ├── invocation/                        // Public sealed interface + package-private implementations
 │   ├── MethodInvoker                  //   public sealed interface + create() factory
@@ -126,12 +131,14 @@ eu.inqudium.proxy
 │   ├── ExceptionClassifier            //   public — ADR-035 §10 algorithm
 │   └── ThrowableUnwrap                //   package-private — InvocationTargetException etc.
 │
-└── introspection/                     // Public — ADR-039 adapter  (planned 3.12)
-    ├── ProxyStackAdapter              //   inspects an instance for proxy structure
-    └── ProxyStackInfo                 //   sealed-permitted DTO subtype
+└── introspection/                     // Public — ADR-039 adapter
+    ├── ProxyStackAdapter              //   inspects proxies for the introspection DTO
+    ├── ProxyStackInfo                 //   standalone DTO record
+    ├── MethodLayers                   //   per-method layer description record
+    └── MethodSignatureFormatter       //   ADR-039 canonical signature format
 ```
 
-Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.9.
+Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The full set listed above is the implemented state as of the proxy rewrite completion.
 
 The `construction/annotation/` subpackage that v1 proposed is **removed** — that work is done in `eu.inqudium.annotation.evaluator` (existing module).
 
@@ -215,7 +222,26 @@ public final class InqInvocationHandler implements InvocationHandler {
     private final long stackId;                  // per ADR-034: one stackId per proxy
     private final LongSupplier callIdSource;     // per ADR-035 §6: one source per proxy
     private final Object realTarget;             // for ObjectMethodHandler equals (§10)
+    private final Class<?> serviceInterface;     // for introspection (ADR-039)
+    private final List<InqElement> elements;     // immutable snapshot (ADR-039)
     private final PerProxyCache cache;
+
+    public InqInvocationHandler(
+            long stackId,
+            LongSupplier callIdSource,
+            Object realTarget,
+            Class<?> serviceInterface,
+            List<InqElement> elements,
+            Map<Method, MethodDispatchEntry> entries) { ... }
+
+    public long stackId();
+    public long nextCallId();
+    public Object realTarget();
+
+    // Cold-path introspection accessors (ADR-039 / §12)
+    public Class<?> serviceInterface();
+    public List<InqElement> elements();
+    public List<MethodLayers> methodLayers();
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
@@ -232,6 +258,8 @@ public final class InqInvocationHandler implements InvocationHandler {
 
 `stackId` is allocated from `PipelineIds.nextChainId()` (mechanism specified by ADR-034). `callIdSource` is a `LongSupplier` from `PipelineIds.newInstanceCallIdSource()` — backed internally by an `AtomicLong` private to this handler, with no contention between proxies. The class is `public` for cross-package reference (e.g. from `eu.inqudium.proxy.entries.ObjectMethodEntry`) but is labelled "Internal API" in its Javadoc; it is not part of the stable user-facing API.
 
+The three introspection accessors (`serviceInterface()`, `elements()`, `methodLayers()`) are cold-path: `serviceInterface()` returns the constructor-supplied interface, `elements()` returns an immutable `List.copyOf` snapshot of `pipeline.elements()` taken at construction time, and `methodLayers()` delegates to `PerProxyCache` which materialises one `MethodLayers` per cached entry on demand. None participate in the dispatch hot path.
+
 #### `MethodDispatchEntry` (sealed interface)
 
 ```java
@@ -244,18 +272,23 @@ public sealed interface MethodDispatchEntry permits
 
     Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) throws Throwable;
 
+    // Cold-path introspection (ADR-039 / §12). The two cache entries
+    // override via their layerDescriptions accessor; the three trivial
+    // entries inherit the empty-list default.
+    default List<String> layerDescriptions() { return List.of(); }
+
     // Static factories on the interface keep the permitted records package-private
     // while allowing cross-package construction from ProxyBuilder /
     // MethodDispatchEntryFactory:
     static MethodDispatchEntry passThrough(MethodInvoker invoker);
     static MethodDispatchEntry defaultMethod(Method defaultMethod);
     static MethodDispatchEntry syncCache(FoldedSyncChain chain, List<String> layerDescriptions);
-    static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind);    // 3.10
-    static MethodDispatchEntry asyncCache(FoldedAsyncChain chain, List<String> layerDescriptions);  // 3.11
+    static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind);
+    static MethodDispatchEntry asyncCache(FoldedAsyncChain chain, List<String> layerDescriptions);
 }
 ```
 
-The introspection adapter (§12) reads `layerDescriptions` directly from `SyncCacheEntry` / `AsyncCacheEntry` record components via the sealed pattern-match — no interface-level accessor is needed. `PassThroughEntry`, `DefaultMethodEntry`, and `ObjectMethodEntry` carry no layer information; the introspection adapter returns an empty list for them.
+The default method is overridden by the cache-entry records via their `layerDescriptions` record component (or, for `SyncCacheEntry`, a `public` accessor declared on the record-like final class); the trivial entries inherit the empty-list default. The introspection adapter calls `MethodDispatchEntry.layerDescriptions()` uniformly via the interface, avoiding any pattern-matching across the sealed family.
 
 #### `PerProxyCache` (package-private)
 
@@ -436,22 +469,76 @@ final class SyncCacheEntry implements MethodDispatchEntry {
 
 ### 7.4 Async folding
 
-Structurally analogous, with `AsyncLayerAction<Object[], Object>` and `AsyncLayerTerminal<Object[], Object>`. The classes `AsyncChainFolder`, `AsyncCacheEntry`, and the folder-internal types live in this module but reference `inqudium-imperative` types. They are loaded only via the `DetectionAsync.isPresent()` branch in `ProxyBuilder`. If `DetectionAsync.isPresent()` is `false` and any async method exists on the service interface, construction fails with the descriptive `IllegalStateException` from ADR-037 §3.
+Structurally analogous to §7.3, with `AsyncLayerAction<Object[], Object>` and `AsyncLayerTerminal<Object[], Object>`. `AsyncChainFolder`, `AsyncCacheEntry`, `FoldedAsyncChain`, and `AsyncParadigmValidator` live in this module but reference `inqudium-imperative` types. They are reached only via the `DetectionAsync.isPresent()`-guarded branch of `MethodDispatchEntryFactory`. If `DetectionAsync.isPresent()` is `false` and any async method exists on the service interface, construction fails with the descriptive `IllegalStateException` from ADR-037 §3 — and `AsyncParadigmValidator` itself is never loaded.
 
-The `AsyncCacheEntry.dispatch(...)` separates the two error paths per ADR-035 §10:
+The folded async chain is a functional interface that does **not** declare `throws`. The underlying `AsyncLayerAction.executeAsync(...)` in `inqudium-imperative` likewise declares no checked exceptions; the contract is that async callers always observe a stage:
 
 ```java
-@Override
-public Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) throws Throwable {
-    long stackId = handler.stackId();
-    long callId  = handler.nextCallId();
-    // chain.run may throw synchronously (e.g. permit-acquire failure before the async op starts),
-    // or return a CompletionStage which itself may complete exceptionally.
-    return chain.run(stackId, callId, args);
+@FunctionalInterface
+interface FoldedAsyncChain {
+    CompletionStage<Object> run(long stackId, long callId, Object[] args);
+}
+
+final class AsyncChainFolder {
+
+    static FoldedAsyncChain fold(
+            List<AsyncLayerAction<Void, Object>> storageLayers, MethodInvoker invoker) {
+        @SuppressWarnings("unchecked")
+        List<AsyncLayerAction<Object[], Object>> layers =
+                (List<AsyncLayerAction<Object[], Object>>) (List<?>) storageLayers;
+        return foldRecursive(layers, 0, invoker);
+    }
+
+    private static FoldedAsyncChain foldRecursive(
+            List<AsyncLayerAction<Object[], Object>> layers, int idx, MethodInvoker invoker) {
+        if (idx == layers.size()) {
+            // Terminal: invoke the target. The target's method declares
+            // CompletionStage<R> as return type, so the runtime result IS a
+            // CompletionStage. Sync-throws (target threw before returning the
+            // stage) become failedFuture for uniform async semantics.
+            return (stackId, callId, args) -> {
+                try {
+                    @SuppressWarnings("unchecked")
+                    CompletionStage<Object> stage =
+                            (CompletionStage<Object>) invoker.invoke(args);
+                    return stage;
+                } catch (Throwable t) {
+                    return CompletableFuture.failedFuture(t);
+                }
+            };
+        }
+        AsyncLayerAction<Object[], Object> head = layers.get(idx);
+        FoldedAsyncChain tail = foldRecursive(layers, idx + 1, invoker);
+        return (stackId, callId, args) -> {
+            AsyncLayerTerminal<Object[], Object> nextForHead =
+                    (s, c, a) -> tail.run(s, c, a);
+            return head.executeAsync(stackId, callId, args, nextForHead);
+        };
+    }
 }
 ```
 
-Synchronous throws from `chain.run` are classified by `ExceptionClassifier` in the `InqInvocationHandler.invoke`'s catch-block (§9). Async failures rolled into the returned `CompletionStage` are not reclassified — they propagate as the JDK conventions specify.
+The dispatch entry is therefore a single line:
+
+```java
+record AsyncCacheEntry(FoldedAsyncChain chain, List<String> layerDescriptions)
+        implements MethodDispatchEntry {
+
+    @Override
+    public Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) {
+        // Returns CompletionStage<Object>. RuntimeExceptions from layers
+        // propagate sync to InqInvocationHandler.invoke's catch-block. Async
+        // failures stay in the returned stage.
+        return chain.run(handler.stackId(), handler.nextCallId(), args);
+    }
+}
+```
+
+The error model deliberately separates two channels:
+
+- **Sync layer faults** (e.g. permit-acquire failure raised by a layer before it calls `next.executeAsync(...)`) propagate as plain `Throwable`s out of `chain.run(...)` and reach `InqInvocationHandler.invoke`'s catch-block. `ExceptionClassifier` classifies them per ADR-035 §10, exactly as for the sync path.
+- **Sync target throws** (the target's method body threw before it could produce a `CompletionStage`) are caught by the folder's terminal and wrapped in `CompletableFuture.failedFuture(t)`. The async caller therefore observes a single-channel error model: always a stage, never a sync throw from a method whose return type is `CompletionStage`.
+- **Async stage failures** (the target's returned stage completes exceptionally) stay inside the stage and propagate via the JDK conventions. `ExceptionClassifier` does not touch them.
 
 ### 7.5 The trivial entry types
 
@@ -554,7 +641,7 @@ public sealed interface MethodInvoker permits MethodHandleInvoker, ReflectiveInv
 
 Default choice: `MethodHandleInvoker`. The JVM property `inqudium.proxy.invoker=mh|reflective` lets us run side-by-side benchmarks without code changes. The two implementations differ in exception propagation: `MethodHandleInvoker` propagates the underlying throwable unwrapped, while `ReflectiveInvoker` wraps in `InvocationTargetException` per JDK convention — both routes are correctly handled by `ExceptionClassifier` / `ThrowableUnwrap` in §9.
 
-Async invocation does not use a separate `invokeAsync(...)` method on `MethodInvoker`; the same synchronous `invoke(...)` returns a `CompletionStage` for async methods (the return type is decided by the target's method signature, not the invoker). The async dispatch logic lives in `AsyncCacheEntry` (planned 3.11), which calls `invoke(...)` and chains on the resulting `CompletionStage`.
+Async invocation does not use a separate `invokeAsync(...)` method on `MethodInvoker`; the same synchronous `invoke(...)` returns a `CompletionStage` for async methods (the return type is decided by the target's method signature, not the invoker). The async dispatch logic lives in `AsyncCacheEntry` (sub-step 3.11), which calls `invoke(...)` via the folder's terminal and chains on the resulting `CompletionStage`.
 
 Arity-specialised invokers (one cached `MethodHandle` per arity) are deferred until benchmarks identify the array-unpack cost.
 
@@ -562,30 +649,38 @@ Arity-specialised invokers (one cached `MethodHandle` per arity) are deferred un
 
 ## 12. Introspection (ADR-039)
 
-`ProxyStackAdapter` lives in this module and is referenced from `InqIntrospector` in `inqudium-pipeline`.
+`ProxyStackAdapter` lives in this module and is the proxy paradigm's standalone entry point for ADR-039 introspection. Client code calls it directly:
 
 ```java
 public final class ProxyStackAdapter {
 
     public static boolean supports(Object instance) {
+        if (instance == null) return false;
         if (!Proxy.isProxyClass(instance.getClass())) return false;
         InvocationHandler h = Proxy.getInvocationHandler(instance);
         return h instanceof InqInvocationHandler;
     }
 
-    public static InqStackInfo inspect(Object instance) {
+    public static ProxyStackInfo inspect(Object instance) {
+        Objects.requireNonNull(instance, "instance");
+        if (!supports(instance)) {
+            throw new IllegalArgumentException(
+                    "instance is not a proxy produced by ProxyDispatcher; "
+                            + "use supports(...) to guard before calling inspect(...)");
+        }
         InqInvocationHandler h = (InqInvocationHandler) Proxy.getInvocationHandler(instance);
         return new ProxyStackInfo(
                 h.stackId(),
                 Optional.of(h.serviceInterface()),
-                h.elements(),                      // snapshot copied from the pipeline at construction
-                h.cache().methodLayersView()       // one MethodLayers per entry
-        );
+                h.elements(),
+                h.methodLayers());
     }
 }
 ```
 
-`InqInvocationHandler` exposes a small package-private read API to the adapter. The `MethodLayers` records are built at construction time, with `Optional.of(method)` populated for every entry — the proxy paradigm always has a concrete `Method` (tier-1 of ADR-039's resolution).
+`InqInvocationHandler` exposes the three introspection accessors directly as cross-package public methods (`serviceInterface()`, `elements()`, `methodLayers()`); `PerProxyCache` stays package-private and the handler delegates `methodLayers()` to a `methodLayers()` builder on the cache. The `MethodLayers` records are materialised on demand from the cached entries — one per method — with `Optional.of(method)` populated for every entry (tier-1 of ADR-039's method resolution; the proxy paradigm always has a concrete `Method`).
+
+**Option-B scope discipline.** This sub-step lands only the proxy-side adapter: standalone DTO records (`ProxyStackInfo`, `MethodLayers`) without an `InqStackInfo` sealed hierarchy, and no central `InqIntrospector` dispatcher. The library-wide `chainId → stackId` rename is likewise deferred — `BulkheadOnAcquireEvent`, `InqRuntimeException`, etc. keep their existing `chainId` parameter names. The record shapes already match ADR-039 exactly, so a future full-implementation refactor can fold `ProxyStackInfo` into the sealed hierarchy without changing the DTO contract.
 
 ---
 
@@ -599,9 +694,13 @@ Two patterns must be respected by the implementation:
 The paradigm-validator design deserves explicit documentation. The validator must perform an `instanceof InqAsyncDecorator` check, which is a class-literal reference to a type from `inqudium-imperative`. **Decision: split-class structure.** Two separate classes:
 
 - `SyncParadigmValidator` (sub-step 3.8) — references only `InqDecorator` from `inqudium-core`; always loadable.
-- `AsyncParadigmValidator` (planned sub-step 3.11) — references `InqAsyncDecorator` from `inqudium-imperative`; loaded only via the `DetectionAsync.isPresent()` branch in `MethodDispatchEntryFactory`.
+- `AsyncParadigmValidator` (sub-step 3.11) — references `InqAsyncDecorator` from `inqudium-imperative`; loaded only via the `DetectionAsync.isPresent()` branch in `MethodDispatchEntryFactory`. The factory delegates the entire async build to `AsyncEntryBuilder` (sub-step 3.13a), which is the single place that references `AsyncParadigmValidator.validate(...)`, `FoldedAsyncChain`, and the layer-extraction helper `toAsyncLayerAction(...)`. The factory's only async-side touch is the `AsyncEntryBuilder.build(...)` `invokestatic` call inside `buildAsyncDecorated(...)`. JVM lazy class loading (JVMS §5.4) resolves `AsyncEntryBuilder` only when that method is first invoked, which only happens after `DetectionAsync.isPresent()` has returned `true`.
 
 Both are package-private static helpers in `eu.inqudium.proxy.construction`. The factory selects between them via the result of `ParadigmDetector.isAsyncMethod(method)`. No type hierarchy connects them — the relationship is via the factory's branching, not via polymorphism. This is simpler than an abstract `ParadigmValidator` interface with two implementations and equally satisfies the class-loading constraint.
+
+The async-build flow itself lives in a separate class `AsyncEntryBuilder` in the same package as the factory. This is not just for code organisation — it is an *architectural* requirement enforced by JVMS §5.4 mechanics. The HotSpot bytecode verifier eagerly resolves the return types of all `MethodHandle`s in a class's `BootstrapMethods` attribute when the class's first `invokedynamic` site links. A private static helper inside the factory whose method reference appears in any lambda site would trigger eager loading of its return type — pulling `AsyncLayerAction` onto the sync path regardless of which method is actually called. The fix is structural: the async-build flow lives behind an `invokestatic` boundary (a regular static method invocation on a different class), which IS lazy. Class-loading discipline is empirically verified by `ModuleLoadingDisciplineTest` (sub-step 3.13, repaired by sub-step 3.13a).
+
+The discipline is empirically verified by `ModuleLoadingDisciplineTest`, which uses `URLClassLoader` isolation to immunise the assertions against test-ordering effects: a fresh `URLClassLoader` with parent set to the system classloader's parent (the platform loader) sees a clean class-loading state for every `eu.inqudium.*` type, regardless of what the system classloader has already loaded. The two test methods (one classpath-exclusion run, one `findLoadedClass` probe) both pass after sub-step 3.13a's `AsyncEntryBuilder` extraction; the closed finding is preserved in `docs/ADR-037-DISCIPLINE-FINDING.md` as the historical record of how the leak was diagnosed and fixed.
 
 ---
 
@@ -655,19 +754,23 @@ Test class structure mirrors package structure. Major categories (with sub-step 
     - the evaluator's `InqAnnotationConfigurationException` propagates unchanged;
     - sync-decorator paradigm violations fail at construction with a descriptive message;
     - the immutable entries map carries one entry per service method plus `equals`/`hashCode`/`toString`;
-    - **(planned 3.11)** async-decorator paradigm violations fail at construction;
-    - **(planned 3.11)** missing `inqudium-imperative` for an async method fails with the ADR-037 §3 message.
+    - async-decorator paradigm violations fail at construction;
+    - missing `inqudium-imperative` for an async method fails with the ADR-037 §3 message (verified empirically by `ModuleLoadingDisciplineTest`, planned 3.13).
 - **`MethodDispatchEntryFactoryTest`** (3.8) — classification table per §7: PassThrough plans, Decorated plans, paradigm-validation propagation.
 - **`SyncChainFolderTest`** (3.7) — folding correctness. Categories: empty chain, single layer, multi-layer, **retry semantics** (a layer that calls `next.execute(...)` multiple times correctly re-enters the inner chain each time), exception propagation through middle layers.
-- **`ObjectMethodHandlerTest`** (planned 3.10) — `equals` symmetry, `hashCode` delegation, `toString` format.
+- **`ObjectMethodHandlerTest`** (3.10) — `equals` symmetry, `hashCode` delegation, `toString` format.
 - **`SyncParadigmValidatorTest`** (3.8) — sync method with non-`InqDecorator` element fails.
-- **`AsyncParadigmValidatorTest`** (planned 3.11) — async method with non-`InqAsyncDecorator` element fails.
-- **`AsyncChainFolderTest`** (planned 3.11) — folding correctness, async variant.
+- **`AsyncParadigmValidatorTest`** (3.11) — async method with non-`InqAsyncDecorator` element fails.
+- **`AsyncChainFolderTest`** (3.11) — folding correctness, async variant.
 - **`ExceptionClassifierTest`** (3.5) — runtime, error, declared-checked, undeclared-checked classification; `InvocationTargetException` and `UndeclaredThrowableException` unwrapping.
 - **`EndToEndPipelineProtectTest`** (3.9) — end-to-end through `pipeline.protect(...)`, exercising the `ProxyDelegation` reflection bridge.
 - **`InqPipelineProtectWithoutProxyTest`** (3.3/3.9, in `inqudium-pipeline`'s test sources) — the proxy-absent branch (`DetectionProxy.isPresent() == false`).
-- **`ProxyStackAdapterTest`** (planned 3.12) — the ADR-039 introspection adapter produces the right DTO; `MethodLayers.method()` is populated for every entry.
-- **`ModuleLoadingDisciplineTest`** (planned 3.13) — a profile-controlled test verifies that running with `inqudium-imperative` absent does not load any async-related classes when no async methods exist on the service interface. Implementation: reflectively probe `getInitiatedClasses()` after a sync-only proxy is constructed and verify none of the async-related class names appear.
+- **`ProxyStackAdapterTest`** (3.12) — the ADR-039 introspection adapter produces the right DTO; `MethodLayers.method()` is populated for every entry. `supports()` rejects null, non-proxies, and proxies with foreign invocation handlers; `inspect()` carries the constructed stack ID, the service interface as `targetType`, the pipeline's element snapshot, and one `MethodLayers` per service method (including the three seeded Object methods).
+- **`MethodSignatureFormatterTest`** (3.12) — pins the ADR-039 canonical format: zero/one/many args, array and varargs collapse, multi-dimensional arrays, primitive arrays, anonymous-class binary-name fallback, generic-method erasure.
+- **`MethodLayersTest`** (3.12) — DTO construction, defensive copy of `layerDescriptions`, null guards on `methodSignature`/`method`.
+- **`ProxyStackInfoTest`** (3.12) — DTO construction, defensive copy of `elements` and `methodLayers`, null guard on `targetType`, acceptance of `Optional.empty()` for future paradigms.
+- **`ModuleLoadingDisciplineTest`** (3.13) — verifies the ADR-037 §6 discipline empirically via a `URLClassLoader` whose parent is the system classloader's parent (the platform loader), so its `findLoadedClass` map is unaffected by the system classloader's prior loads. Two methods: one builds a sync-only proxy on a classpath that excludes `inqudium-imperative`; the other builds a sync-only proxy on the full classpath and probes for async-related class loads. Both pass after sub-step 3.13a's `AsyncEntryBuilder` extraction repaired the `BootstrapMethods` leak originally diagnosed in `docs/ADR-037-DISCIPLINE-FINDING.md`. They serve as permanent regression guards against any future change that re-introduces an async-type reference into a class loaded on the sync path.
+- **`RealBulkheadSmokeTest`** (3.13) — end-to-end smoke tests using the production `InqBulkhead` from `inqudium-imperative` (rather than the `FakeBulkhead` fixtures of sub-steps 3.5–3.12). Verifies concurrency limit, permit release on exception, and async permit semantics through `pipeline.protect(...)`. Anchors the proxy machinery against an actual production resilience element, not just hand-rolled doubles.
 
 Tests are flat where the framework requires (none of the proxy tests is a Spring Boot test, so the `@Nested` caveat from CLAUDE.md does not apply here).
 
@@ -677,16 +780,16 @@ Tests are flat where the framework requires (none of the proxy tests is a Spring
 
 Each phase-tagged per CLAUDE.md's TODO discipline:
 
-- **TODO(impl-1):** decide between `MethodHandleInvoker` and `ReflectiveInvoker` as the default based on JMH benchmarks (sync/async, varying arity, varying layer count). Architecture allows either; the JVM property `inqudium.proxy.invoker=mh|reflective` switches.
 - **TODO(impl-2):** decide whether to introduce arity-specialised invokers. Defer until benchmarks identify the array-unpack cost.
 - **TODO(impl-3):** investigate the per-call closure cost (N closures for N layers). Current design accepts this allocation as cheap; if benchmarks identify it as hot, an arena-based allocator or a stack-based walker with explicit depth state could replace closures. Retry semantics must be preserved (see §7.3).
-- **TODO(intro-1):** finalise the package-private read API on `InqInvocationHandler` for `ProxyStackAdapter`. Choose between public accessor methods on the handler or a sealed-interface bridge. Resolved as part of sub-step 3.12.
 - **TODO(jpms):** add a `module-info.java` that explicitly exports `eu.inqudium.proxy` and `eu.inqudium.proxy.introspection` and `requires` the right modules. Ensure no transitive exposure of internal packages.
 
 **Resolved:**
 
 - ~~TODO(evaluator-name)~~ — the annotation evaluator module is `eu.inqudium:inqudium-annotation` (Maven coordinate, package `eu.inqudium.annotation.evaluator`).
 - ~~TODO(paradigm-split)~~ — split-class structure chosen, see §13.
+- ~~TODO(intro-1)~~ — sub-step 3.12 added three public accessors on `InqInvocationHandler` (`serviceInterface()`, `elements()`, `methodLayers()`) and a `default List<String> layerDescriptions()` on `MethodDispatchEntry`. ADR-039 full implementation deferred per Option-B scope; the proxy adapter is standalone.
+- ~~TODO(impl-1)~~ — `MethodHandleInvoker` is the default; the system property `inqudium.proxy.invoker=mh|reflective` switches to `ReflectiveInvoker`. The decision was made based on the JVM's ability to inline `MethodHandle` invocations at the JIT level; JMH benchmarking is left as a follow-up optimisation rather than a precondition.
 
 ---
 

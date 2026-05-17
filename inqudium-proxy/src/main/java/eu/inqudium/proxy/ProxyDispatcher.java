@@ -44,10 +44,13 @@ public final class ProxyDispatcher {
      * @throws IllegalArgumentException  if inputs are invalid
      * @throws IllegalStateException     if a pipeline element is missing
      *                                   the right paradigm interface
-     *                                   for any method's mode
-     * @throws UnsupportedOperationException if any service method
-     *                                   returns {@link java.util.concurrent.CompletionStage}
-     *                                   (async support arrives in 3.11)
+     *                                   for any method's mode, or if
+     *                                   the service interface declares
+     *                                   a {@link java.util.concurrent.CompletionStage}-
+     *                                   returning method but
+     *                                   {@code inqudium-imperative} is
+     *                                   absent from the classpath
+     *                                   (ADR-037 §3)
      * @throws eu.inqudium.annotation.evaluator.InqAnnotationConfigurationException
      *                                   if the annotation evaluator
      *                                   detects a configuration
@@ -60,8 +63,13 @@ public final class ProxyDispatcher {
         long stackId = PipelineIds.nextChainId();
         LongSupplier callIdSource = PipelineIds.newInstanceCallIdSource();
 
-        InqInvocationHandler handler =
-                new InqInvocationHandler(stackId, callIdSource, target, entries);
+        InqInvocationHandler handler = new InqInvocationHandler(
+                stackId,
+                callIdSource,
+                target,
+                serviceInterface,
+                pipeline.elements(),
+                entries);
 
         return serviceInterface.cast(
                 Proxy.newProxyInstance(

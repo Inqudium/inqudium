@@ -5,6 +5,7 @@ import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.pipeline.InqPipeline;
+import eu.inqudium.proxy.dispatch.DetectionAsync;
 import eu.inqudium.proxy.dispatch.ParadigmDetector;
 import eu.inqudium.proxy.entries.MethodDispatchEntry;
 import eu.inqudium.proxy.folding.FoldedSyncChain;
@@ -38,12 +39,25 @@ import java.util.Objects;
  * {@link MethodDispatchEntry#objectMethod(eu.inqudium.proxy.handler.ObjectMethodHandler.Kind)}
  * after the evaluator pass.</p>
  *
- * <p><strong>Sub-step 3.8 deviations from the architecture:</strong></p>
- * <ul>
- *   <li>Async methods raise
- *       {@link UnsupportedOperationException} with the documented
- *       message; sub-step 3.11 lands the async path.</li>
- * </ul>
+ * <p><strong>Class-loading discipline</strong> (ADR-037 §6 /
+ * ARCHITECTURE.md §13). This class carries <strong>no</strong>
+ * compile-time references to {@code inqudium-imperative} types.
+ * The entire async-build flow lives in {@link AsyncEntryBuilder};
+ * {@link #buildAsyncDecorated(Method, MethodPlan.Decorated,
+ * InqPipeline, Object)} reaches it via a plain {@code invokestatic}
+ * call, which is lazy per JVMS §5.4 — the JVM resolves
+ * {@code AsyncEntryBuilder} (and through it
+ * {@code AsyncLayerAction}, {@code InqAsyncDecorator},
+ * {@code AsyncChainFolder}, {@code FoldedAsyncChain},
+ * {@code AsyncParadigmValidator}) only when that branch is first
+ * executed. The earlier in-class {@code toAsyncLayerAction} helper
+ * caused the JVM's verifier to eagerly resolve
+ * {@code AsyncLayerAction} via this class's {@code BootstrapMethods}
+ * attribute — see {@code ADR-037-DISCIPLINE-FINDING.md} for the full
+ * diagnosis. The entry point
+ * {@link #buildDecorated(Method, MethodPlan.Decorated, InqPipeline, Object)}
+ * gates the async branch on {@link DetectionAsync#isPresent()}, which
+ * itself touches no async type literals.</p>
  *
  * <p><strong>Internal API.</strong> Public for cross-package
  * reference from {@code ProxyBuilder}; not part of the stable
@@ -103,13 +117,29 @@ public final class MethodDispatchEntryFactory {
             Object target) {
 
         if (ParadigmDetector.isAsyncMethod(method)) {
-            throw new UnsupportedOperationException(
-                    "Method " + method + " returns CompletionStage; "
-                            + "async support arrives in sub-step 3.11. "
-                            + "Use a synchronous method signature in the "
-                            + "meantime or wait for the async dispatch path "
-                            + "to land.");
+            if (!DetectionAsync.isPresent()) {
+                throw new IllegalStateException(
+                        "Method " + method + " returns CompletionStage but "
+                                + "inqudium-imperative is not on the classpath. "
+                                + "Add inqudium-imperative as a runtime dependency "
+                                + "to enable async dispatch (ADR-037 §3).");
+            }
+            // Class-loading discipline: the async-build flow lives in
+            // AsyncEntryBuilder, referenced only from
+            // buildAsyncDecorated via a plain invokestatic call. The
+            // JVM resolves AsyncEntryBuilder (and the imperative types
+            // it touches) lazily per JVMS §5.4 — only when this branch
+            // is first executed.
+            return buildAsyncDecorated(method, plan, pipeline, target);
         }
+        return buildSyncDecorated(method, plan, pipeline, target);
+    }
+
+    private static MethodDispatchEntry buildSyncDecorated(
+            Method method,
+            MethodPlan.Decorated plan,
+            InqPipeline pipeline,
+            Object target) {
 
         List<InqElement> elements = ElementResolver.resolveNames(
                 plan.elementNamesOuterToInner(), pipeline);
@@ -129,6 +159,14 @@ public final class MethodDispatchEntryFactory {
         return MethodDispatchEntry.syncCache(chain, layerDescriptions);
     }
 
+    private static MethodDispatchEntry buildAsyncDecorated(
+            Method method,
+            MethodPlan.Decorated plan,
+            InqPipeline pipeline,
+            Object target) {
+        return AsyncEntryBuilder.build(method, plan, pipeline, target);
+    }
+
     /**
      * Re-types an element to the storage parameterisation
      * {@code LayerAction<Void, Object>}. Since
@@ -144,12 +182,8 @@ public final class MethodDispatchEntryFactory {
      * {@link InqElement} view (which the compiler does not statically
      * see as a {@link LayerAction}) to the storage view.</p>
      *
-     * <p>This is the second of two unchecked-cast sites in
-     * {@code inqudium-proxy}'s main sources (the first lives in
-     * {@link SyncChainFolder#fold} and casts the whole list; this one
-     * casts a single element). See ARCHITECTURE.md §7.2.</p>
+     * <p>See ARCHITECTURE.md §7.2 for the full discussion.</p>
      */
-    @SuppressWarnings("unchecked")
     private static LayerAction<Void, Object> toLayerAction(InqElement element) {
         InqDecorator<?, ?> decorator = (InqDecorator<?, ?>) element;
         return (LayerAction<Void, Object>) (LayerAction<?, ?>) decorator;

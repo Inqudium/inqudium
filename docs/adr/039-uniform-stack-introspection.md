@@ -7,6 +7,40 @@
 ADR-035 (proxy architecture), ADR-037 (module topology and paradigm
 recognition).
 
+## Implementation status
+
+**Proposed.** Sub-step 3.12 of the proxy rewrite implements the
+proxy-side adapter and DTOs as standalone artefacts in
+`eu.inqudium.proxy.introspection`:
+
+- `ProxyStackAdapter` (with `supports(Object)` and `inspect(Object)`)
+- `ProxyStackInfo`, `MethodLayers` — standalone records whose
+  shapes exactly match the ADR-039 specification, ready to fold
+  into a sealed `InqStackInfo` hierarchy without contract change
+- `MethodSignatureFormatter` — the canonical signature format
+  defined by this ADR
+
+**Deferred** to a separate library-wide refactor of comparable
+scope to the proxy rewrite itself:
+
+- The central `InqIntrospector` adapter chain in
+  `inqudium-pipeline`, including the `DetectionAspectJ` and
+  `DetectionSpringAop` probes
+- The `InqStackInfo` sealed interface and its four permits
+  (`FunctionStackInfo`, `ProxyStackInfo`, `AspectJStackInfo`,
+  `SpringAspectStackInfo`)
+- `FunctionStackAdapter`, `AspectJStackAdapter`,
+  `SpringAspectStackAdapter`
+- `InqStackRenderer` (`toTree`, `toJson`)
+- The library-wide `chainId` → `stackId` rename
+  (`BulkheadOnAcquireEvent`, `BulkheadEventPublishFailureException`,
+  `InqRuntimeException`, etc.)
+- The `SerializedLambda` tier-2 method resolution
+
+ADR-039 will be promoted to "Accepted" only after the deferred
+work lands. Until then, the proxy adapter is consumed directly
+(no central dispatch).
+
 ## Context
 
 The `Wrapper<S extends Wrapper<S>>` interface in `inqudium-core/pipeline`
