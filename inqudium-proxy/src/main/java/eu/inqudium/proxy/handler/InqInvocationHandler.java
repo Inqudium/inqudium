@@ -37,14 +37,17 @@ public final class InqInvocationHandler implements InvocationHandler {
 
     private final long stackId;
     private final LongSupplier callIdSource;
+    private final Object realTarget;
     private final PerProxyCache cache;
 
     public InqInvocationHandler(
             long stackId,
             LongSupplier callIdSource,
+            Object realTarget,
             Map<Method, MethodDispatchEntry> entries) {
         this.stackId = stackId;
         this.callIdSource = Objects.requireNonNull(callIdSource, "callIdSource");
+        this.realTarget = Objects.requireNonNull(realTarget, "realTarget");
         this.cache = new PerProxyCache(Objects.requireNonNull(entries, "entries"));
     }
 
@@ -62,6 +65,15 @@ public final class InqInvocationHandler implements InvocationHandler {
      */
     public long nextCallId() {
         return callIdSource.getAsLong();
+    }
+
+    /**
+     * The real implementation the proxy wraps. Exposed so
+     * {@link ObjectMethodHandler#dispatch} can read it from other
+     * proxies during {@code equals} comparison (ARCHITECTURE.md §10).
+     */
+    public Object realTarget() {
+        return realTarget;
     }
 
     @Override

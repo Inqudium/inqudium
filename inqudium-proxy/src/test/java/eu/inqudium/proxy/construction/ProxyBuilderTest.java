@@ -134,14 +134,52 @@ class ProxyBuilderTest {
             // annotation evaluator walks serviceInterface.getMethods(),
             // which excludes Object-declared methods for an interface,
             // so the plans map covers only those four. ProxyBuilder
-            // additionally seeds entries for equals/hashCode/toString
-            // (Object methods are still delivered to the handler by
-            // the JDK proxy) — see the Object-methods loop in build().
+            // additionally seeds ObjectMethodEntry entries for
+            // equals/hashCode/toString (the JDK proxy still routes those
+            // three Object methods to the handler) — see the
+            // Object-methods seeding loop in build().
             assertThat(entries).isNotEmpty();
             assertThat(entries.keySet().stream().map(Method::getName))
                     .contains("simple", "decorated",
                             "defaultUnoverridden", "defaultOverridden",
                             "equals", "hashCode", "toString");
+        }
+
+        @Test
+        void should_route_object_methods_to_object_method_entry() throws NoSuchMethodException {
+            // What is to be tested?
+            //   Post-3.10, ProxyBuilder seeds equals/hashCode/toString
+            //   entries that route through ObjectMethodEntry —
+            //   not PassThroughEntry as in the 3.9 transitional state.
+            //   The factory itself no longer carries an Object-class
+            //   branch; the seeding happens in build() directly.
+            // How will the test case be deemed successful and why?
+            //   Each of the three Object-method entries reports
+            //   simple name "ObjectMethodEntry".
+            // Why is it important to test this test case?
+            //   This is the central architectural change in 3.10; a
+            //   regression that routed Object methods elsewhere would
+            //   silently lose proxy-aware equals symmetry and the
+            //   descriptive toString.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            SyncServiceImpl target = new SyncServiceImpl();
+            Method equals = Object.class.getMethod("equals", Object.class);
+            Method hashCode = Object.class.getMethod("hashCode");
+            Method toString = Object.class.getMethod("toString");
+
+            // When
+            Map<Method, MethodDispatchEntry> entries = ProxyBuilder.build(
+                    pipeline, SyncService.class, target);
+
+            // Then
+            assertThat(entries.get(equals).getClass().getSimpleName())
+                    .isEqualTo("ObjectMethodEntry");
+            assertThat(entries.get(hashCode).getClass().getSimpleName())
+                    .isEqualTo("ObjectMethodEntry");
+            assertThat(entries.get(toString).getClass().getSimpleName())
+                    .isEqualTo("ObjectMethodEntry");
         }
 
         @Test

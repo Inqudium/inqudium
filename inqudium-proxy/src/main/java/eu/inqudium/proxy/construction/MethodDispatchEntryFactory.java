@@ -21,8 +21,7 @@ import java.util.Objects;
  *
  * <pre>
  * classify(method, plan, implClass):
- *   if method.declaringClass == Object.class                      &rarr; ObjectMethodEntry
- *   elif plan instanceof PassThrough:
+ *   if plan instanceof PassThrough:
  *     if method.isDefault() &amp;&amp; !overriddenByImpl(method, implClass) &rarr; DefaultMethodEntry
  *     else                                                        &rarr; PassThroughEntry
  *   else (plan instanceof Decorated):
@@ -31,12 +30,16 @@ import java.util.Objects;
  *     validate paradigm; fold and produce SyncCacheEntry or AsyncCacheEntry
  * </pre>
  *
+ * <p>{@code Object}-declared methods are <strong>not</strong> handled
+ * by this factory. {@code serviceInterface.getMethods()} on an
+ * interface excludes {@link Object} methods, so the evaluator's plans
+ * never reference them; {@code ProxyBuilder} seeds Object-method
+ * entries directly via
+ * {@link MethodDispatchEntry#objectMethod(eu.inqudium.proxy.handler.ObjectMethodHandler.Kind)}
+ * after the evaluator pass.</p>
+ *
  * <p><strong>Sub-step 3.8 deviations from the architecture:</strong></p>
  * <ul>
- *   <li>{@code Object}-declared methods route to
- *       {@link MethodDispatchEntry#passThrough(MethodInvoker) PassThroughEntry}
- *       — see {@code TODO(3.10)} below. The correct
- *       {@code ObjectMethodEntry} routing arrives in sub-step 3.10.</li>
  *   <li>Async methods raise
  *       {@link UnsupportedOperationException} with the documented
  *       message; sub-step 3.11 lands the async path.</li>
@@ -75,13 +78,6 @@ public final class MethodDispatchEntryFactory {
         Objects.requireNonNull(pipeline, "pipeline");
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(implClass, "implClass");
-
-        // Object-declared methods: temporary PassThrough routing.
-        // TODO(3.10): route to ObjectMethodEntry via ObjectMethodHandler.
-        if (method.getDeclaringClass() == Object.class) {
-            MethodInvoker invoker = MethodInvoker.create(target, method);
-            return MethodDispatchEntry.passThrough(invoker);
-        }
 
         return switch (plan) {
             case MethodPlan.PassThrough passThrough ->

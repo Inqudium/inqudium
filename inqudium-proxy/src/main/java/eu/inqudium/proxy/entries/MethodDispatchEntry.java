@@ -2,6 +2,7 @@ package eu.inqudium.proxy.entries;
 
 import eu.inqudium.proxy.folding.FoldedSyncChain;
 import eu.inqudium.proxy.handler.InqInvocationHandler;
+import eu.inqudium.proxy.handler.ObjectMethodHandler;
 import eu.inqudium.proxy.invocation.MethodInvoker;
 
 import java.lang.reflect.Method;
@@ -23,8 +24,9 @@ import java.util.List;
  *   <li>{@link DefaultMethodEntry} — {@code InvocationHandler.invokeDefault}
  *       for unoverridden Java default methods (sub-step 3.6).</li>
  *   <li>{@link SyncCacheEntry} — folded sync chain (sub-step 3.7).</li>
- *   <li>{@code ObjectMethodEntry} — {@code Object}-declared methods
- *       (equals, hashCode, toString, etc.), added in sub-step 3.10.</li>
+ *   <li>{@link ObjectMethodEntry} — {@code Object}-declared methods
+ *       ({@code equals}, {@code hashCode}, {@code toString}), routed
+ *       to {@link ObjectMethodHandler} (sub-step 3.10).</li>
  *   <li>{@code AsyncCacheEntry} — folded async chain, added in
  *       sub-step 3.11.</li>
  * </ul>
@@ -35,7 +37,7 @@ import java.util.List;
  * the type.</p>
  */
 public sealed interface MethodDispatchEntry
-        permits PassThroughEntry, DefaultMethodEntry, SyncCacheEntry {
+        permits PassThroughEntry, DefaultMethodEntry, SyncCacheEntry, ObjectMethodEntry {
 
     /**
      * Dispatches the call to the entry's strategy and returns the
@@ -82,5 +84,16 @@ public sealed interface MethodDispatchEntry
     static MethodDispatchEntry syncCache(
             FoldedSyncChain chain, List<String> layerDescriptions) {
         return new SyncCacheEntry(chain, layerDescriptions);
+    }
+
+    /**
+     * Creates an {@link ObjectMethodEntry} for one of the three
+     * {@link Object} methods routed to the
+     * {@link ObjectMethodHandler}. Cross-package entry point for
+     * {@code construction/}; the permitted record itself stays
+     * package-private.
+     */
+    static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind) {
+        return new ObjectMethodEntry(kind);
     }
 }
