@@ -230,7 +230,8 @@ class MethodDispatchEntryFactoryTest {
             // SyncCacheEntry needs a real handler for stackId/callId.
             eu.inqudium.proxy.handler.InqInvocationHandler handler =
                     new eu.inqudium.proxy.handler.InqInvocationHandler(
-                            1L, () -> 1L, target, java.util.Map.of());
+                            1L, () -> 1L, target,
+                            TestService.class, java.util.List.of(), java.util.Map.of());
             Object result = entry.dispatch(null, handler, new Object[0]);
             assertThat(result).isEqualTo("decorated");
             assertThat(bulkhead.callCount()).isEqualTo(1);
@@ -278,7 +279,8 @@ class MethodDispatchEntryFactoryTest {
             assertThat(entry.getClass().getSimpleName()).isEqualTo("AsyncCacheEntry");
             eu.inqudium.proxy.handler.InqInvocationHandler handler =
                     new eu.inqudium.proxy.handler.InqInvocationHandler(
-                            1L, () -> 1L, target, java.util.Map.of());
+                            1L, () -> 1L, target,
+                            TestService.class, java.util.List.of(), java.util.Map.of());
             Object result = entry.dispatch(null, handler, new Object[0]);
             assertThat(result).isInstanceOf(java.util.concurrent.CompletionStage.class);
             assertThat(((java.util.concurrent.CompletionStage<?>) result)

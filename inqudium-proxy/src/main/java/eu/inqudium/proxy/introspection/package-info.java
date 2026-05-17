@@ -1,10 +1,28 @@
 /**
- * Introspection adapter per ADR-039: {@code ProxyStackAdapter} plugs
- * into the central {@code InqIntrospector} so that
- * {@code inspect(proxyInstance)} works uniformly across stack kinds,
- * and {@code ProxyStackInfo} is the sealed-permitted DTO subtype that
- * carries the proxy-specific view (stack id, service interface,
- * elements snapshot, per-method layer summary).
+ * Proxy-side introspection adapter per ADR-039 (Option-B scope).
+ *
+ * <p>This package exposes four public types:</p>
+ * <ul>
+ *   <li>{@link eu.inqudium.proxy.introspection.ProxyStackAdapter} —
+ *       static {@code supports} / {@code inspect} methods for
+ *       proxies produced by {@code ProxyDispatcher.protect(...)}.</li>
+ *   <li>{@link eu.inqudium.proxy.introspection.ProxyStackInfo} —
+ *       standalone DTO record carrying stack id, service interface,
+ *       elements snapshot, and per-method layer summary.</li>
+ *   <li>{@link eu.inqudium.proxy.introspection.MethodLayers} —
+ *       per-method layer description record (signature, descriptions,
+ *       canonical {@code Method} for disambiguation).</li>
+ *   <li>{@link eu.inqudium.proxy.introspection.MethodSignatureFormatter}
+ *       — utility producing ADR-039's canonical
+ *       {@code Class.method(P1, P2)} format.</li>
+ * </ul>
+ *
+ * <p>Per the Option-B scope decision, the central
+ * {@code InqIntrospector} dispatcher, the {@code InqStackInfo} sealed
+ * hierarchy, and the library-wide {@code chainId → stackId} rename are
+ * deferred to a separate refactor. The DTO records' shapes already
+ * match ADR-039 exactly, so a future migration into the sealed
+ * hierarchy will not require a contract change.</p>
  *
  * @see inqudium-proxy/docs/ARCHITECTURE.md
  */

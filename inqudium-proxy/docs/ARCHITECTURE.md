@@ -126,12 +126,14 @@ eu.inqudium.proxy
 │   ├── ExceptionClassifier            //   public — ADR-035 §10 algorithm
 │   └── ThrowableUnwrap                //   package-private — InvocationTargetException etc.
 │
-└── introspection/                     // Public — ADR-039 adapter  (planned 3.12)
-    ├── ProxyStackAdapter              //   inspects an instance for proxy structure
-    └── ProxyStackInfo                 //   sealed-permitted DTO subtype
+└── introspection/                     // Public — ADR-039 adapter
+    ├── ProxyStackAdapter              //   inspects proxies for the introspection DTO
+    ├── ProxyStackInfo                 //   standalone DTO record
+    ├── MethodLayers                   //   per-method layer description record
+    └── MethodSignatureFormatter       //   ADR-039 canonical signature format
 ```
 
-Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.11.
+Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.12.
 
 The `construction/annotation/` subpackage that v1 proposed is **removed** — that work is done in `eu.inqudium.annotation.evaluator` (existing module).
 
@@ -215,7 +217,26 @@ public final class InqInvocationHandler implements InvocationHandler {
     private final long stackId;                  // per ADR-034: one stackId per proxy
     private final LongSupplier callIdSource;     // per ADR-035 §6: one source per proxy
     private final Object realTarget;             // for ObjectMethodHandler equals (§10)
+    private final Class<?> serviceInterface;     // for introspection (ADR-039)
+    private final List<InqElement> elements;     // immutable snapshot (ADR-039)
     private final PerProxyCache cache;
+
+    public InqInvocationHandler(
+            long stackId,
+            LongSupplier callIdSource,
+            Object realTarget,
+            Class<?> serviceInterface,
+            List<InqElement> elements,
+            Map<Method, MethodDispatchEntry> entries) { ... }
+
+    public long stackId();
+    public long nextCallId();
+    public Object realTarget();
+
+    // Cold-path introspection accessors (ADR-039 / §12)
+    public Class<?> serviceInterface();
+    public List<InqElement> elements();
+    public List<MethodLayers> methodLayers();
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
@@ -232,6 +253,8 @@ public final class InqInvocationHandler implements InvocationHandler {
 
 `stackId` is allocated from `PipelineIds.nextChainId()` (mechanism specified by ADR-034). `callIdSource` is a `LongSupplier` from `PipelineIds.newInstanceCallIdSource()` — backed internally by an `AtomicLong` private to this handler, with no contention between proxies. The class is `public` for cross-package reference (e.g. from `eu.inqudium.proxy.entries.ObjectMethodEntry`) but is labelled "Internal API" in its Javadoc; it is not part of the stable user-facing API.
 
+The three introspection accessors (`serviceInterface()`, `elements()`, `methodLayers()`) are cold-path: `serviceInterface()` returns the constructor-supplied interface, `elements()` returns an immutable `List.copyOf` snapshot of `pipeline.elements()` taken at construction time, and `methodLayers()` delegates to `PerProxyCache` which materialises one `MethodLayers` per cached entry on demand. None participate in the dispatch hot path.
+
 #### `MethodDispatchEntry` (sealed interface)
 
 ```java
@@ -244,6 +267,11 @@ public sealed interface MethodDispatchEntry permits
 
     Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) throws Throwable;
 
+    // Cold-path introspection (ADR-039 / §12). The two cache entries
+    // override via their layerDescriptions accessor; the three trivial
+    // entries inherit the empty-list default.
+    default List<String> layerDescriptions() { return List.of(); }
+
     // Static factories on the interface keep the permitted records package-private
     // while allowing cross-package construction from ProxyBuilder /
     // MethodDispatchEntryFactory:
@@ -255,7 +283,7 @@ public sealed interface MethodDispatchEntry permits
 }
 ```
 
-The introspection adapter (§12) reads `layerDescriptions` directly from `SyncCacheEntry` / `AsyncCacheEntry` record components via the sealed pattern-match — no interface-level accessor is needed. `PassThroughEntry`, `DefaultMethodEntry`, and `ObjectMethodEntry` carry no layer information; the introspection adapter returns an empty list for them.
+The default method is overridden by the cache-entry records via their `layerDescriptions` record component (or, for `SyncCacheEntry`, a `public` accessor declared on the record-like final class); the trivial entries inherit the empty-list default. The introspection adapter calls `MethodDispatchEntry.layerDescriptions()` uniformly via the interface, avoiding any pattern-matching across the sealed family.
 
 #### `PerProxyCache` (package-private)
 
@@ -616,30 +644,38 @@ Arity-specialised invokers (one cached `MethodHandle` per arity) are deferred un
 
 ## 12. Introspection (ADR-039)
 
-`ProxyStackAdapter` lives in this module and is referenced from `InqIntrospector` in `inqudium-pipeline`.
+`ProxyStackAdapter` lives in this module and is the proxy paradigm's standalone entry point for ADR-039 introspection. Client code calls it directly:
 
 ```java
 public final class ProxyStackAdapter {
 
     public static boolean supports(Object instance) {
+        if (instance == null) return false;
         if (!Proxy.isProxyClass(instance.getClass())) return false;
         InvocationHandler h = Proxy.getInvocationHandler(instance);
         return h instanceof InqInvocationHandler;
     }
 
-    public static InqStackInfo inspect(Object instance) {
+    public static ProxyStackInfo inspect(Object instance) {
+        Objects.requireNonNull(instance, "instance");
+        if (!supports(instance)) {
+            throw new IllegalArgumentException(
+                    "instance is not a proxy produced by ProxyDispatcher; "
+                            + "use supports(...) to guard before calling inspect(...)");
+        }
         InqInvocationHandler h = (InqInvocationHandler) Proxy.getInvocationHandler(instance);
         return new ProxyStackInfo(
                 h.stackId(),
                 Optional.of(h.serviceInterface()),
-                h.elements(),                      // snapshot copied from the pipeline at construction
-                h.cache().methodLayersView()       // one MethodLayers per entry
-        );
+                h.elements(),
+                h.methodLayers());
     }
 }
 ```
 
-`InqInvocationHandler` exposes a small package-private read API to the adapter. The `MethodLayers` records are built at construction time, with `Optional.of(method)` populated for every entry — the proxy paradigm always has a concrete `Method` (tier-1 of ADR-039's resolution).
+`InqInvocationHandler` exposes the three introspection accessors directly as cross-package public methods (`serviceInterface()`, `elements()`, `methodLayers()`); `PerProxyCache` stays package-private and the handler delegates `methodLayers()` to a `methodLayers()` builder on the cache. The `MethodLayers` records are materialised on demand from the cached entries — one per method — with `Optional.of(method)` populated for every entry (tier-1 of ADR-039's method resolution; the proxy paradigm always has a concrete `Method`).
+
+**Option-B scope discipline.** This sub-step lands only the proxy-side adapter: standalone DTO records (`ProxyStackInfo`, `MethodLayers`) without an `InqStackInfo` sealed hierarchy, and no central `InqIntrospector` dispatcher. The library-wide `chainId → stackId` rename is likewise deferred — `BulkheadOnAcquireEvent`, `InqRuntimeException`, etc. keep their existing `chainId` parameter names. The record shapes already match ADR-039 exactly, so a future full-implementation refactor can fold `ProxyStackInfo` into the sealed hierarchy without changing the DTO contract.
 
 ---
 
@@ -720,7 +756,10 @@ Test class structure mirrors package structure. Major categories (with sub-step 
 - **`ExceptionClassifierTest`** (3.5) — runtime, error, declared-checked, undeclared-checked classification; `InvocationTargetException` and `UndeclaredThrowableException` unwrapping.
 - **`EndToEndPipelineProtectTest`** (3.9) — end-to-end through `pipeline.protect(...)`, exercising the `ProxyDelegation` reflection bridge.
 - **`InqPipelineProtectWithoutProxyTest`** (3.3/3.9, in `inqudium-pipeline`'s test sources) — the proxy-absent branch (`DetectionProxy.isPresent() == false`).
-- **`ProxyStackAdapterTest`** (planned 3.12) — the ADR-039 introspection adapter produces the right DTO; `MethodLayers.method()` is populated for every entry.
+- **`ProxyStackAdapterTest`** (3.12) — the ADR-039 introspection adapter produces the right DTO; `MethodLayers.method()` is populated for every entry. `supports()` rejects null, non-proxies, and proxies with foreign invocation handlers; `inspect()` carries the constructed stack ID, the service interface as `targetType`, the pipeline's element snapshot, and one `MethodLayers` per service method (including the three seeded Object methods).
+- **`MethodSignatureFormatterTest`** (3.12) — pins the ADR-039 canonical format: zero/one/many args, array and varargs collapse, multi-dimensional arrays, primitive arrays, anonymous-class binary-name fallback, generic-method erasure.
+- **`MethodLayersTest`** (3.12) — DTO construction, defensive copy of `layerDescriptions`, null guards on `methodSignature`/`method`.
+- **`ProxyStackInfoTest`** (3.12) — DTO construction, defensive copy of `elements` and `methodLayers`, null guard on `targetType`, acceptance of `Optional.empty()` for future paradigms.
 - **`ModuleLoadingDisciplineTest`** (planned 3.13) — a profile-controlled test verifies that running with `inqudium-imperative` absent does not load any async-related classes when no async methods exist on the service interface. Implementation: reflectively probe `getInitiatedClasses()` after a sync-only proxy is constructed and verify none of the async-related class names appear.
 
 Tests are flat where the framework requires (none of the proxy tests is a Spring Boot test, so the `@Nested` caveat from CLAUDE.md does not apply here).
@@ -734,13 +773,13 @@ Each phase-tagged per CLAUDE.md's TODO discipline:
 - **TODO(impl-1):** decide between `MethodHandleInvoker` and `ReflectiveInvoker` as the default based on JMH benchmarks (sync/async, varying arity, varying layer count). Architecture allows either; the JVM property `inqudium.proxy.invoker=mh|reflective` switches.
 - **TODO(impl-2):** decide whether to introduce arity-specialised invokers. Defer until benchmarks identify the array-unpack cost.
 - **TODO(impl-3):** investigate the per-call closure cost (N closures for N layers). Current design accepts this allocation as cheap; if benchmarks identify it as hot, an arena-based allocator or a stack-based walker with explicit depth state could replace closures. Retry semantics must be preserved (see §7.3).
-- **TODO(intro-1):** finalise the package-private read API on `InqInvocationHandler` for `ProxyStackAdapter`. Choose between public accessor methods on the handler or a sealed-interface bridge. Resolved as part of sub-step 3.12.
 - **TODO(jpms):** add a `module-info.java` that explicitly exports `eu.inqudium.proxy` and `eu.inqudium.proxy.introspection` and `requires` the right modules. Ensure no transitive exposure of internal packages.
 
 **Resolved:**
 
 - ~~TODO(evaluator-name)~~ — the annotation evaluator module is `eu.inqudium:inqudium-annotation` (Maven coordinate, package `eu.inqudium.annotation.evaluator`).
 - ~~TODO(paradigm-split)~~ — split-class structure chosen, see §13.
+- ~~TODO(intro-1)~~ — sub-step 3.12 added three public accessors on `InqInvocationHandler` (`serviceInterface()`, `elements()`, `methodLayers()`) and a `default List<String> layerDescriptions()` on `MethodDispatchEntry`. ADR-039 full implementation deferred per Option-B scope; the proxy adapter is standalone.
 
 ---
 

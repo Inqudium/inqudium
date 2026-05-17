@@ -427,6 +427,6 @@ later refactor:
 * [x] 3.9 — Handler + ProxyDispatcher + wire DetectionProxy real delegation (2026-05-17, PR #70)
 * [x] 3.10 — Object methods: ObjectMethodHandler + ObjectMethodEntry (2026-05-17, PR #71)
 * [x] 3.11 — Async dispatch (DetectionAsync + AsyncChainFolder + AsyncCacheEntry + AsyncParadigmValidator) (2026-05-17, PR #72)
-* [ ] 3.12 — Introspection adapter: ProxyStackAdapter + ProxyStackInfo
+* [x] 3.12 — Proxy introspection adapter (ProxyStackAdapter + ProxyStackInfo, Option B) (2026-05-17, PR #N)
 * [ ] 3.13 — Module-loading-discipline test + end-to-end smoke tests
 * [ ] 3.14 — ADR promotion + plan document deletion

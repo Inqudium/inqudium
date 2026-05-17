@@ -58,6 +58,22 @@ public sealed interface MethodDispatchEntry
             throws Throwable;
 
     /**
+     * Returns the layer descriptions for this entry in outer-to-inner
+     * order. {@link SyncCacheEntry} and {@link AsyncCacheEntry}
+     * override via their package-private accessor (record component
+     * for {@code AsyncCacheEntry}, declared method for
+     * {@code SyncCacheEntry}); the other three entry types inherit
+     * the empty-list default.
+     *
+     * <p>Used by
+     * {@link eu.inqudium.proxy.handler.InqInvocationHandler#methodLayers()}
+     * during introspection (ADR-039 / ARCHITECTURE.md §12).</p>
+     */
+    default List<String> layerDescriptions() {
+        return List.of();
+    }
+
+    /**
      * Creates a {@link PassThroughEntry} bound to {@code invoker}.
      * Cross-package entry point for {@code construction/}; the
      * permitted record itself stays package-private.

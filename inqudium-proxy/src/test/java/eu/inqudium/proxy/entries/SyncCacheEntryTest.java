@@ -57,7 +57,8 @@ class SyncCacheEntryTest {
             // Given
             RecordingChain chain = new RecordingChain("ok");
             InqInvocationHandler handler = new InqInvocationHandler(
-                    99L, startingFrom(10L), new Object(), java.util.Map.of());
+                    99L, startingFrom(10L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             // When
@@ -77,7 +78,8 @@ class SyncCacheEntryTest {
             // Given
             RecordingChain chain = new RecordingChain("ok");
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, startingFrom(1L), new Object(), java.util.Map.of());
+                    1L, startingFrom(1L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             Object[] args = new Object[]{"a", 42, null};
@@ -95,7 +97,8 @@ class SyncCacheEntryTest {
             // Given
             RecordingChain chain = new RecordingChain("verbatim result");
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, startingFrom(1L), new Object(), java.util.Map.of());
+                    1L, startingFrom(1L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             // When

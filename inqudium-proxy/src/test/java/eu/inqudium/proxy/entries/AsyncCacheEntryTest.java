@@ -59,7 +59,8 @@ class AsyncCacheEntryTest {
             // Given
             RecordingChain chain = new RecordingChain(CompletableFuture.completedFuture("ok"));
             InqInvocationHandler handler = new InqInvocationHandler(
-                    99L, startingFrom(10L), new Object(), java.util.Map.of());
+                    99L, startingFrom(10L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             AsyncCacheEntry entry = new AsyncCacheEntry(chain, List.of());
 
             // When
@@ -79,7 +80,8 @@ class AsyncCacheEntryTest {
             // Given
             RecordingChain chain = new RecordingChain(CompletableFuture.completedFuture("ok"));
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, startingFrom(1L), new Object(), java.util.Map.of());
+                    1L, startingFrom(1L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             AsyncCacheEntry entry = new AsyncCacheEntry(chain, List.of());
 
             Object[] args = new Object[]{"a", 42, null};
@@ -114,7 +116,8 @@ class AsyncCacheEntryTest {
             CompletableFuture<Object> stage = CompletableFuture.completedFuture("verbatim");
             RecordingChain chain = new RecordingChain(stage);
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, startingFrom(1L), new Object(), java.util.Map.of());
+                    1L, startingFrom(1L), new Object(),
+                    Object.class, java.util.List.of(), java.util.Map.of());
             AsyncCacheEntry entry = new AsyncCacheEntry(chain, List.of());
 
             // When

@@ -1,10 +1,14 @@
 package eu.inqudium.proxy.handler;
 
 import eu.inqudium.proxy.entries.MethodDispatchEntry;
+import eu.inqudium.proxy.introspection.MethodLayers;
+import eu.inqudium.proxy.introspection.MethodSignatureFormatter;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Immutable per-proxy lookup from {@link Method} to
@@ -37,5 +41,19 @@ final class PerProxyCache {
                             + "in the proxy construction phase.");
         }
         return entry;
+    }
+
+    /**
+     * Builds one {@link MethodLayers} per cached entry, materialising
+     * the canonical signature and the entry's layer descriptions on
+     * demand. Cold-path API for introspection (ADR-039).
+     */
+    List<MethodLayers> methodLayers() {
+        return entries.entrySet().stream()
+                .map(e -> new MethodLayers(
+                        MethodSignatureFormatter.format(e.getKey()),
+                        e.getValue().layerDescriptions(),
+                        Optional.of(e.getKey())))
+                .toList();
     }
 }
