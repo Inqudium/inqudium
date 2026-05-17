@@ -1,7 +1,11 @@
 # `inqudium-proxy` — Architecture Design (v2)
 
-**Status:** Draft, intended as the design basis for the from-scratch rewrite of `inqudium-proxy` mandated by ADR-035.
-**Date:** 2026-05-16 (initial); updated 2026-05-17 to reflect implementation through sub-step 3.9.
+**Status:** Stable, reflects the implementation as of the proxy
+rewrite completion (sub-steps 3.0–3.14 of the now-deleted
+`REFACTORING_PROXY_REWRITE.md`).
+**Date:** 2026-05-16 (initial); updated 2026-05-17 to reflect
+implementation through sub-step 3.9; finalised on 2026-05-17
+at proxy-rewrite completion.
 **Supersedes:** v1 of this document.
 
 **Authoritative references:** ADR-035 (proxy architecture), ADR-036 (annotation model — implemented in `eu.inqudium.annotation.evaluator`), ADR-037 (module topology), ADR-039 (uniform stack introspection), ADR-040 (pipeline composition model), ADR-041 (pipeline composition ordering), ADR-042 (pipeline contracts), ADR-034 (correlation IDs), ADR-029 (lifecycle implementation pattern).
@@ -134,7 +138,7 @@ eu.inqudium.proxy
     └── MethodSignatureFormatter       //   ADR-039 canonical signature format
 ```
 
-Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.12.
+Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The full set listed above is the implemented state as of the proxy rewrite completion.
 
 The `construction/annotation/` subpackage that v1 proposed is **removed** — that work is done in `eu.inqudium.annotation.evaluator` (existing module).
 
@@ -776,7 +780,6 @@ Tests are flat where the framework requires (none of the proxy tests is a Spring
 
 Each phase-tagged per CLAUDE.md's TODO discipline:
 
-- **TODO(impl-1):** decide between `MethodHandleInvoker` and `ReflectiveInvoker` as the default based on JMH benchmarks (sync/async, varying arity, varying layer count). Architecture allows either; the JVM property `inqudium.proxy.invoker=mh|reflective` switches.
 - **TODO(impl-2):** decide whether to introduce arity-specialised invokers. Defer until benchmarks identify the array-unpack cost.
 - **TODO(impl-3):** investigate the per-call closure cost (N closures for N layers). Current design accepts this allocation as cheap; if benchmarks identify it as hot, an arena-based allocator or a stack-based walker with explicit depth state could replace closures. Retry semantics must be preserved (see §7.3).
 - **TODO(jpms):** add a `module-info.java` that explicitly exports `eu.inqudium.proxy` and `eu.inqudium.proxy.introspection` and `requires` the right modules. Ensure no transitive exposure of internal packages.
@@ -786,6 +789,7 @@ Each phase-tagged per CLAUDE.md's TODO discipline:
 - ~~TODO(evaluator-name)~~ — the annotation evaluator module is `eu.inqudium:inqudium-annotation` (Maven coordinate, package `eu.inqudium.annotation.evaluator`).
 - ~~TODO(paradigm-split)~~ — split-class structure chosen, see §13.
 - ~~TODO(intro-1)~~ — sub-step 3.12 added three public accessors on `InqInvocationHandler` (`serviceInterface()`, `elements()`, `methodLayers()`) and a `default List<String> layerDescriptions()` on `MethodDispatchEntry`. ADR-039 full implementation deferred per Option-B scope; the proxy adapter is standalone.
+- ~~TODO(impl-1)~~ — `MethodHandleInvoker` is the default; the system property `inqudium.proxy.invoker=mh|reflective` switches to `ReflectiveInvoker`. The decision was made based on the JVM's ability to inline `MethodHandle` invocations at the JIT level; JMH benchmarking is left as a follow-up optimisation rather than a precondition.
 
 ---
 
