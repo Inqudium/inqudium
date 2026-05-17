@@ -424,7 +424,7 @@ later refactor:
 * [x] 3.6 — Dispatch entries part 1: sealed family + simple variants (2026-05-17, PR #67)
 * [x] 3.7 — Folding: SyncChainFolder + FoldedSyncChain + SyncCacheEntry (2026-05-17, PR #68)
 * [x] 3.8 — Construction (sync only): ProxyBuilder + collaborators (2026-05-17, PR #69)
-* [ ] 3.9 — Handler + ProxyDispatcher + wire DetectionProxy real delegation
+* [x] 3.9 — Handler + ProxyDispatcher + wire DetectionProxy real delegation (2026-05-17, PR #70)
 * [ ] 3.10 — Object methods: ObjectMethodHandler + ObjectMethodEntry
 * [ ] 3.11 — Async dispatch path
 * [ ] 3.12 — Introspection adapter: ProxyStackAdapter + ProxyStackInfo

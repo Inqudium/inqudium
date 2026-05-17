@@ -56,7 +56,7 @@ class SyncCacheEntryTest {
         void should_pull_stack_id_and_call_id_from_the_handler_on_each_dispatch() throws Throwable {
             // Given
             RecordingChain chain = new RecordingChain("ok");
-            InqInvocationHandler handler = new InqInvocationHandler(99L, startingFrom(10L));
+            InqInvocationHandler handler = new InqInvocationHandler(99L, startingFrom(10L), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             // When
@@ -75,7 +75,7 @@ class SyncCacheEntryTest {
         void should_pass_args_through_to_the_folded_chain() throws Throwable {
             // Given
             RecordingChain chain = new RecordingChain("ok");
-            InqInvocationHandler handler = new InqInvocationHandler(1L, startingFrom(1L));
+            InqInvocationHandler handler = new InqInvocationHandler(1L, startingFrom(1L), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             Object[] args = new Object[]{"a", 42, null};
@@ -92,7 +92,7 @@ class SyncCacheEntryTest {
         void should_return_the_chain_s_result_unchanged() throws Throwable {
             // Given
             RecordingChain chain = new RecordingChain("verbatim result");
-            InqInvocationHandler handler = new InqInvocationHandler(1L, startingFrom(1L));
+            InqInvocationHandler handler = new InqInvocationHandler(1L, startingFrom(1L), java.util.Map.of());
             SyncCacheEntry entry = new SyncCacheEntry(chain, List.of());
 
             // When

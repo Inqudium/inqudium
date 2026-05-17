@@ -51,16 +51,12 @@ public interface InqPipeline {
      * <p>This default method requires {@code inqudium-proxy} on the
      * classpath. The probe is performed by {@link DetectionProxy}; if
      * the module is absent, an {@link IllegalStateException} is raised
-     * with a message pointing at the required dependency.</p>
-     *
-     * <p><strong>Sub-step 3.3 state:</strong> the actual delegation to
-     * {@code ProxyDispatcher.protect(...)} is not wired yet. At this
-     * sub-step the method always throws — either
-     * {@link IllegalStateException} (proxy module absent, the case at
-     * 3.3 because {@code inqudium-proxy} has not been created) or
-     * {@link UnsupportedOperationException} (proxy module present but
-     * delegation not yet implemented, the case from 3.4 onward until
-     * 3.9 lands).</p>
+     * with a message pointing at the required dependency. When the
+     * proxy module is present, the call is delegated to
+     * {@code eu.inqudium.proxy.ProxyDispatcher.protect(...)} via the
+     * {@link ProxyDelegation} reflective bridge (string-name lookup
+     * avoids the Maven cycle that a direct class-literal reference
+     * would create).</p>
      *
      * @param serviceInterface  the interface the proxy will implement;
      *                          must be an interface, not a concrete
@@ -72,9 +68,6 @@ public interface InqPipeline {
      * @return                  a proxy of {@code serviceInterface}
      * @throws IllegalStateException        if the proxy module is not
      *                                      on the classpath
-     * @throws UnsupportedOperationException if the proxy module is on
-     *                                      the classpath but delegation
-     *                                      has not been wired yet
      */
     default <T> T protect(Class<T> serviceInterface, T target) {
         if (!DetectionProxy.isPresent()) {
@@ -83,10 +76,7 @@ public interface InqPipeline {
                             + "inqudium-proxy as a runtime dependency to enable "
                             + "proxy-based protection of service interfaces.");
         }
-        throw new UnsupportedOperationException(
-                "Proxy delegation will be wired in sub-step 3.9. "
-                        + "DetectionProxy reports the proxy module is present, "
-                        + "but the delegation code has not yet been implemented.");
+        return ProxyDelegation.delegateProtect(this, serviceInterface, target);
     }
 
     /**

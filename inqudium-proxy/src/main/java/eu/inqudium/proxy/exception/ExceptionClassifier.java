@@ -24,8 +24,12 @@ import java.lang.reflect.Method;
  * <p>This classifier handles synchronous dispatch only. Failures
  * inside the {@code CompletionStage} returned by an async method are
  * not reclassified — they propagate via the standard JDK conventions.</p>
+ *
+ * <p><strong>Internal API.</strong> This class is {@code public} so
+ * it can be invoked from {@code eu.inqudium.proxy.handler}; it is
+ * not part of {@code inqudium-proxy}'s stable public API.</p>
  */
-final class ExceptionClassifier {
+public final class ExceptionClassifier {
 
     private ExceptionClassifier() {
         // utility class
@@ -36,7 +40,7 @@ final class ExceptionClassifier {
      * method's call. The handler's typical use is
      * {@code throw ExceptionClassifier.classify(t, method);}.
      */
-    static Throwable classify(Throwable raw, Method method) {
+    public static Throwable classify(Throwable raw, Method method) {
         Throwable unwrapped = ThrowableUnwrap.unwrap(raw);
 
         if (unwrapped instanceof RuntimeException) {
