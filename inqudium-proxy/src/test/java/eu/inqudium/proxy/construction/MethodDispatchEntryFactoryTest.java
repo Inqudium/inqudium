@@ -236,39 +236,79 @@ class MethodDispatchEntryFactoryTest {
             assertThat(bulkhead.callCount()).isEqualTo(1);
         }
 
-        @Test
-        void should_throw_unsupported_operation_for_an_async_decorated_method() throws NoSuchMethodException {
-            // Given
-            InqPipeline pipeline = pipelineWithBulkhead();
-            TestServiceImpl target = new TestServiceImpl();
-            Method async = method("asyncDecorated");
-            MethodPlan plan = new MethodPlan.Decorated(List.of("bh"));
+    }
 
-            // When / Then
-            assertThatThrownBy(() -> MethodDispatchEntryFactory.createEntry(
-                    async, plan, pipeline, target, TestServiceImpl.class))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("CompletionStage");
-        }
+    @Nested
+    class AsyncDispatch {
 
         @Test
-        void should_include_sub_step_3_11_in_the_async_rejection_message() throws NoSuchMethodException {
+        void should_route_an_async_decorated_method_to_async_cache_entry() throws Throwable {
             // What is to be tested?
-            //   The async-rejection message must direct the user at
-            //   sub-step 3.11 — the planned landing for async dispatch.
-            //   Without this, the user has no signpost from the error
-            //   to the roadmap.
+            //   Given a Decorated plan referencing an async element by
+            //   name, the factory resolves the element, validates the
+            //   async paradigm, folds the chain, and returns an
+            //   AsyncCacheEntry. We pin the type, then dispatch
+            //   through the entry to confirm the layer was actually
+            //   inserted in front of the target call.
             // How will the test case be deemed successful and why?
-            //   The exception message contains the literal "3.11".
-            //   This pins the documented forward-reference.
+            //   (a) the returned entry is an AsyncCacheEntry,
+            //   (b) the dispatched CompletionStage carries the
+            //   target's value,
+            //   (c) the layer's call counter is incremented exactly
+            //   once.
             // Why is it important to test this test case?
-            //   The pointer is the only signal the user gets that
-            //   async is on the roadmap rather than a permanent
-            //   limitation; a regression that dropped it would degrade
-            //   the user experience materially.
+            //   Central happy-path for async-decorated methods on
+            //   the factory side — the 3.11 analogue of the
+            //   sync test above. A regression breaks every async
+            //   end-to-end flow.
 
             // Given
-            InqPipeline pipeline = pipelineWithBulkhead();
+            FakeAsyncDecorator bulkhead = new FakeAsyncDecorator(
+                    "bh", InqElementType.BULKHEAD);
+            InqPipeline pipeline = InqPipeline.builder().shield(bulkhead).build();
+            TestServiceImpl target = new TestServiceImpl();
+            Method async = method("asyncDecorated");
+            MethodPlan plan = new MethodPlan.Decorated(List.of("bh"));
+
+            // When
+            MethodDispatchEntry entry = MethodDispatchEntryFactory.createEntry(
+                    async, plan, pipeline, target, TestServiceImpl.class);
+
+            // Then
+            assertThat(entry.getClass().getSimpleName()).isEqualTo("AsyncCacheEntry");
+            eu.inqudium.proxy.handler.InqInvocationHandler handler =
+                    new eu.inqudium.proxy.handler.InqInvocationHandler(
+                            1L, () -> 1L, target, java.util.Map.of());
+            Object result = entry.dispatch(null, handler, new Object[0]);
+            assertThat(result).isInstanceOf(java.util.concurrent.CompletionStage.class);
+            assertThat(((java.util.concurrent.CompletionStage<?>) result)
+                    .toCompletableFuture().get()).isEqualTo("asyncDecorated");
+            assertThat(bulkhead.callCount()).isEqualTo(1);
+        }
+
+        @Test
+        void should_propagate_async_paradigm_validation_failure() throws NoSuchMethodException {
+            // What is to be tested?
+            //   When the pipeline supplies a sync-only element for an
+            //   async method, the factory must surface
+            //   AsyncParadigmValidator's IllegalStateException with the
+            //   InqAsyncDecorator marker in the message.
+            // How will the test case be deemed successful and why?
+            //   IllegalStateException whose message contains
+            //   "InqAsyncDecorator". This pins that the async branch
+            //   uses AsyncParadigmValidator (not SyncParadigmValidator).
+            // Why is it important to test this test case?
+            //   Pins the paradigm-validator routing in the factory's
+            //   async branch — a regression that called the wrong
+            //   validator would surface as a misleading error message
+            //   (talking about InqDecorator instead of
+            //   InqAsyncDecorator).
+
+            // Given — pipeline carries a sync-only decorator for the
+            // async method's element.
+            InqPipeline pipeline = InqPipeline.builder()
+                    .shield(new FakeDecorator("bh", InqElementType.BULKHEAD))
+                    .build();
             TestServiceImpl target = new TestServiceImpl();
             Method async = method("asyncDecorated");
             MethodPlan plan = new MethodPlan.Decorated(List.of("bh"));
@@ -276,8 +316,10 @@ class MethodDispatchEntryFactoryTest {
             // When / Then
             assertThatThrownBy(() -> MethodDispatchEntryFactory.createEntry(
                     async, plan, pipeline, target, TestServiceImpl.class))
-                    .hasMessageContaining("3.11");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("InqAsyncDecorator");
         }
+
     }
 
     @Nested

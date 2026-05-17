@@ -69,6 +69,12 @@ class ProxyBuilderTest {
         }
     }
 
+    private static InqPipeline pipelineWithAsyncBulkhead() {
+        return InqPipeline.builder()
+                .shield(new FakeAsyncDecorator("bh", InqElementType.BULKHEAD))
+                .build();
+    }
+
     public interface MissingNameService {
         String oops();
     }
@@ -200,6 +206,39 @@ class ProxyBuilderTest {
                     .isEqualTo("DefaultMethodEntry");
             assertThat(entries.get(overridden).getClass().getSimpleName())
                     .isEqualTo("PassThroughEntry");
+        }
+
+        @Test
+        void should_route_an_async_decorated_method_to_async_cache_entry() throws NoSuchMethodException {
+            // What is to be tested?
+            //   When the service interface declares a CompletionStage-
+            //   returning method and the pipeline carries an
+            //   InqAsyncDecorator-implementing element, ProxyBuilder
+            //   must route through the factory's async branch and
+            //   produce an AsyncCacheEntry. The 3.10 placeholder that
+            //   asserted UnsupportedOperationException is gone — the
+            //   real path is exercised end-to-end here.
+            // How will the test case be deemed successful and why?
+            //   The entry for the async method reports simple name
+            //   "AsyncCacheEntry".
+            // Why is it important to test this test case?
+            //   Pins the builder-side wiring of the async path. A
+            //   regression that re-introduced the
+            //   UnsupportedOperationException branch would surface
+            //   immediately.
+
+            // Given
+            InqPipeline pipeline = pipelineWithAsyncBulkhead();
+            AsyncServiceImpl target = new AsyncServiceImpl();
+            Method async = AsyncService.class.getDeclaredMethod("asyncDecorated");
+
+            // When
+            Map<Method, MethodDispatchEntry> entries = ProxyBuilder.build(
+                    pipeline, AsyncService.class, target);
+
+            // Then
+            assertThat(entries.get(async).getClass().getSimpleName())
+                    .isEqualTo("AsyncCacheEntry");
         }
 
         @Test
@@ -341,16 +380,33 @@ class ProxyBuilderTest {
         }
 
         @Test
-        void should_propagate_unsupported_operation_exception_for_async_methods() {
-            // Given
+        void should_propagate_illegal_state_exception_for_async_paradigm_mismatch() {
+            // What is to be tested?
+            //   When the pipeline carries a sync-only decorator and
+            //   the service interface declares an async method, the
+            //   builder must surface AsyncParadigmValidator's
+            //   IllegalStateException. Replaces the 3.10 placeholder
+            //   that asserted UnsupportedOperationException with the
+            //   "3.11" message.
+            // How will the test case be deemed successful and why?
+            //   IllegalStateException with "InqAsyncDecorator" in the
+            //   message — pins routing through the async branch and
+            //   the async validator.
+            // Why is it important to test this test case?
+            //   The first user-visible failure mode for a half-wired
+            //   async pipeline; a regression here makes the error
+            //   message unhelpful.
+
+            // Given — pipeline element implements sync InqDecorator
+            // only, not InqAsyncDecorator.
             InqPipeline pipeline = pipelineWithBulkhead();
             AsyncServiceImpl target = new AsyncServiceImpl();
 
             // When / Then
             assertThatThrownBy(() -> ProxyBuilder.build(
                     pipeline, AsyncService.class, target))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("3.11");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("InqAsyncDecorator");
         }
 
         @Test
