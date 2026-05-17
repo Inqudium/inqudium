@@ -429,5 +429,5 @@ later refactor:
 * [x] 3.11 — Async dispatch (DetectionAsync + AsyncChainFolder + AsyncCacheEntry + AsyncParadigmValidator) (2026-05-17, PR #72)
 * [x] 3.12 — Proxy introspection adapter (ProxyStackAdapter + ProxyStackInfo, Option B) (2026-05-17, PR #73)
 * [x] 3.13 — Module-loading-discipline test + end-to-end smoke tests (2026-05-17, PR #74)
-* [x] 3.13a — Async helper extraction (AsyncEntryBuilder; fixes ADR-037 §6 violation surfaced by 3.13's discipline test) (2026-05-17, PR #N)
+* [x] 3.13a — Async helper extraction (AsyncEntryBuilder; fixes ADR-037 §6 violation surfaced by 3.13's discipline test) (2026-05-17, PR #75)
 * [ ] 3.14 — ADR promotion + plan document deletion

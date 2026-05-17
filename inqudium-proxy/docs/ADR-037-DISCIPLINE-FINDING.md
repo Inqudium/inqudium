@@ -2,7 +2,7 @@
 
 **Status:** Resolved
 **Surfaced:** 2026-05-17 (sub-step 3.13 of REFACTORING_PROXY_REWRITE.md)
-**Resolved:** 2026-05-17 (sub-step 3.13a of REFACTORING_PROXY_REWRITE.md, PR #N)
+**Resolved:** 2026-05-17 (sub-step 3.13a of REFACTORING_PROXY_REWRITE.md, PR #75)
 **Severity:** Architectural violation; deployment-breaking when
 inqudium-imperative is intentionally absent.
 
