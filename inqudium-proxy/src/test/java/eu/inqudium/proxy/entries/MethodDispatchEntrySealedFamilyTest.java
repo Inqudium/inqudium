@@ -26,15 +26,46 @@ class MethodDispatchEntrySealedFamilyTest {
     }
 
     @Test
-    void should_permit_passthrough_default_method_and_sync_cache_entries() {
+    void should_permit_passthrough_default_method_sync_cache_and_object_method_entries() {
         // Given / When
         Class<?>[] permits = MethodDispatchEntry.class.getPermittedSubclasses();
 
-        // Then — sub-step 3.7 grows the family to three permits.
-        // Sub-steps 3.10 and 3.11 grow the list further; each of those
-        // sub-steps updates this test.
+        // Then — sub-step 3.10 grows the family to four permits.
+        // Sub-step 3.11 will add AsyncCacheEntry; that sub-step updates
+        // this test.
         assertThat(permits).containsExactlyInAnyOrder(
-                PassThroughEntry.class, DefaultMethodEntry.class, SyncCacheEntry.class);
+                PassThroughEntry.class,
+                DefaultMethodEntry.class,
+                SyncCacheEntry.class,
+                ObjectMethodEntry.class);
+    }
+
+    @Test
+    void should_expose_four_static_factories_on_the_sealed_interface() {
+        // What is to be tested?
+        //   The sealed family ships four cross-package static factories
+        //   (passThrough, defaultMethod, syncCache, objectMethod). The
+        //   factory count and names are part of the construction
+        //   contract — ProxyBuilder and MethodDispatchEntryFactory rely
+        //   on these named entry points.
+        // How will the test case be deemed successful and why?
+        //   The interface declares exactly four static factory methods,
+        //   and each named factory is present.
+        // Why is it important to test this test case?
+        //   A regression that dropped or renamed a factory would compile
+        //   only where the factory is actually used; this test surfaces
+        //   the regression at the contract level.
+
+        // Given / When
+        java.util.Set<String> staticFactoryNames = java.util.Arrays.stream(
+                        MethodDispatchEntry.class.getDeclaredMethods())
+                .filter(m -> java.lang.reflect.Modifier.isStatic(m.getModifiers()))
+                .map(java.lang.reflect.Method::getName)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Then
+        assertThat(staticFactoryNames).containsExactlyInAnyOrder(
+                "passThrough", "defaultMethod", "syncCache", "objectMethod");
     }
 
     @Test

@@ -90,10 +90,34 @@ class MethodDispatchEntryFactoryTest {
     // =====================================================================
 
     @Nested
-    class ObjectMethods {
+    class NoLongerRoutesObject {
 
         @Test
-        void should_route_equals_to_passthrough_entry_in_3_8() throws Throwable {
+        void should_not_be_called_with_object_class_methods_post_3_10() throws Throwable {
+            // What is to be tested?
+            //   Object-declared methods (equals, hashCode, toString) are
+            //   no longer this factory's responsibility. Since the
+            //   annotation evaluator iterates serviceInterface.getMethods()
+            //   — which on an interface excludes Object methods — no
+            //   evaluator plan ever names an Object method. ProxyBuilder
+            //   seeds Object-method entries directly via
+            //   MethodDispatchEntry.objectMethod(Kind) after the evaluator
+            //   pass, never through this factory.
+            // How will the test case be deemed successful and why?
+            //   The factory's dead Object-class branch was removed in
+            //   3.10, not replaced with a defensive guard. Calling the
+            //   factory with an Object-declared method therefore reaches
+            //   the regular switch on MethodPlan and produces a
+            //   PassThroughEntry — confirmation that no hidden
+            //   Object-method special-casing remains. The architectural
+            //   contract that Object methods never enter this factory is
+            //   enforced by ProxyBuilder, not by this factory.
+            // Why is it important to test this test case?
+            //   Pins the 3.10 cleanup: a future regression that
+            //   reintroduced an Object-class branch would surface
+            //   immediately, and the test documents that the factory is
+            //   not the architectural responsibility for Object methods.
+
             // Given
             Method equals = objectMethod("equals", Object.class);
             InqPipeline pipeline = pipelineWithBulkhead();
@@ -103,37 +127,10 @@ class MethodDispatchEntryFactoryTest {
             MethodDispatchEntry entry = MethodDispatchEntryFactory.createEntry(
                     equals, new MethodPlan.PassThrough(), pipeline, target, TestServiceImpl.class);
 
-            // Then — TODO(3.10): currently PassThrough; 3.10 reroutes to ObjectMethodEntry.
-            assertThat(entry.getClass().getSimpleName()).isEqualTo("PassThroughEntry");
-        }
-
-        @Test
-        void should_route_to_string_to_passthrough_entry_in_3_8() throws Throwable {
-            // Given
-            Method toString = objectMethod("toString");
-            InqPipeline pipeline = pipelineWithBulkhead();
-            TestServiceImpl target = new TestServiceImpl();
-
-            // When
-            MethodDispatchEntry entry = MethodDispatchEntryFactory.createEntry(
-                    toString, new MethodPlan.PassThrough(), pipeline, target, TestServiceImpl.class);
-
-            // Then
-            assertThat(entry.getClass().getSimpleName()).isEqualTo("PassThroughEntry");
-        }
-
-        @Test
-        void should_route_hash_code_to_passthrough_entry_in_3_8() throws Throwable {
-            // Given
-            Method hashCode = objectMethod("hashCode");
-            InqPipeline pipeline = pipelineWithBulkhead();
-            TestServiceImpl target = new TestServiceImpl();
-
-            // When
-            MethodDispatchEntry entry = MethodDispatchEntryFactory.createEntry(
-                    hashCode, new MethodPlan.PassThrough(), pipeline, target, TestServiceImpl.class);
-
-            // Then
+            // Then — no Object-class special-casing in the factory; the
+            // method is treated like any other PassThrough-planned method
+            // because by contract ProxyBuilder never calls the factory
+            // with an Object-declared method.
             assertThat(entry.getClass().getSimpleName()).isEqualTo("PassThroughEntry");
         }
     }
@@ -232,7 +229,8 @@ class MethodDispatchEntryFactoryTest {
             // dispatch the entry to confirm the layer is wired in.
             // SyncCacheEntry needs a real handler for stackId/callId.
             eu.inqudium.proxy.handler.InqInvocationHandler handler =
-                    new eu.inqudium.proxy.handler.InqInvocationHandler(1L, () -> 1L, java.util.Map.of());
+                    new eu.inqudium.proxy.handler.InqInvocationHandler(
+                            1L, () -> 1L, target, java.util.Map.of());
             Object result = entry.dispatch(null, handler, new Object[0]);
             assertThat(result).isEqualTo("decorated");
             assertThat(bulkhead.callCount()).isEqualTo(1);

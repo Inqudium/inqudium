@@ -285,7 +285,7 @@ The evaluator does not know about:
 
 | Concern                                            | Why the proxy handles it                                                                                  |
 |----------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| `Object` methods (`equals`, `hashCode`, ...)       | The evaluator iterates `serviceInterface.getMethods()`; for `Object` methods it returns `PassThrough`, but the proxy must route them to a dedicated handler, not to a generic real-target call. |
+| `Object` methods (`equals`, `hashCode`, `toString`) | The evaluator iterates `serviceInterface.getMethods()`, which on an **interface** excludes `Object` methods (a JDK reflection quirk: `getMethods()` on an interface returns the interface's own methods and inherited superinterface methods, but not `Object`'s methods). The evaluator therefore never returns a plan for `equals`, `hashCode`, or `toString`. `ProxyBuilder` seeds entries for these three Object methods after the evaluator pass, routing them directly to `ObjectMethodEntry`. |
 | Default-method routing                             | An unoverridden default method receives `PassThrough` from the evaluator. The proxy must distinguish this from a normal pass-through to call `InvocationHandler.invokeDefault(...)` rather than `realTarget.method(...)`. |
 | Sync vs. async dispatch mode                       | The evaluator returns only names; the proxy decides sync/async from the return type (`isAsyncMethod`).    |
 | Async-decorator paradigm compatibility (§6 of ADR-035) | The evaluator does not know whether the resolved elements support async. Async methods whose referenced elements lack `InqAsyncDecorator` must fail at construction. |
@@ -502,17 +502,15 @@ The `InqUndeclaredCheckedException` is `public` and lives at the top-level of `e
 
 ## 10. `Object` method handling (ADR-035 §8)
 
-`ObjectMethodHandler` is the single dispatcher for all `Object` methods. It is invoked from `ObjectMethodEntry`, which carries an enum tag `Kind { EQUALS, HASH_CODE, TO_STRING, WAIT, NOTIFY, NOTIFY_ALL, GET_CLASS }` to avoid per-call method-name string comparison.
+`ObjectMethodHandler` is the dispatcher for the three `Object` methods that the JDK `Proxy` class routes to invocation handlers. It is invoked from `ObjectMethodEntry`, which carries an enum tag `Kind { EQUALS, HASH_CODE, TO_STRING }` to avoid per-call method-name string comparison. Only these three `Object` methods are routed to invocation handlers by the JDK `Proxy` class; `wait`, `notify`, `notifyAll`, and `getClass` are handled by the JVM directly on the proxy instance and never reach our handler — they require no implementation in this module.
 
-The rules (verbatim from ADR-035 §8):
+The rules (per ADR-035 §8):
 
 | Method        | Behaviour                                                                            |
 |---------------|--------------------------------------------------------------------------------------|
-| `equals`      | Proxies equal iff both are JDK proxies with `InvocationHandler`s of the same concrete type whose real targets are equal. |
+| `equals`      | Proxies equal iff both are JDK proxies with `InqInvocationHandler` whose real targets are equal. Comparison with a non-proxy (including the real target itself) is always `false`, preserving symmetry. |
 | `hashCode`    | Delegates to the real target.                                                        |
-| `toString`    | Descriptive: proxy class name + real target's `toString`.                            |
-| `wait`/`notify`/`notifyAll` | Invoked on the proxy itself (not the handler).                         |
-| `getClass`    | Returns the proxy's class (not the handler's).                                       |
+| `toString`    | Descriptive: proxy class simple name + `[` + real target's `toString` + `]`.         |
 
 `equals` symmetry is enforced by the "both must be JDK proxies with our handler type" test.
 

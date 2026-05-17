@@ -61,7 +61,7 @@ public final class ProxyDispatcher {
         LongSupplier callIdSource = PipelineIds.newInstanceCallIdSource();
 
         InqInvocationHandler handler =
-                new InqInvocationHandler(stackId, callIdSource, entries);
+                new InqInvocationHandler(stackId, callIdSource, target, entries);
 
         return serviceInterface.cast(
                 Proxy.newProxyInstance(

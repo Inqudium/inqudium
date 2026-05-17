@@ -75,6 +75,61 @@ class ProxyDispatcherTest {
         }
     }
 
+    /**
+     * Order-service implementation with content-based equals/hashCode
+     * so two distinct instances with the same id compare equal. Used
+     * by ObjectMethods tests that need real-target equality semantics
+     * (not identity).
+     */
+    public static final class EquatableOrderService implements OrderService {
+
+        private final int id;
+
+        public EquatableOrderService(int id) {
+            this.id = id;
+        }
+
+        @Override
+        public String getOrder(long orderId) {
+            return "order#" + orderId;
+        }
+
+        @Override
+        public String greet(String name) {
+            return "Hello, " + name + "!";
+        }
+
+        @Override
+        public String throwsRuntime() {
+            throw new IllegalStateException("runtime boom");
+        }
+
+        @Override
+        public String throwsChecked() {
+            throw new IllegalStateException("not used");
+        }
+
+        @Override
+        public String throwsUndeclared() {
+            return null;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof EquatableOrderService other && other.id == this.id;
+        }
+
+        @Override
+        public int hashCode() {
+            return Integer.hashCode(id);
+        }
+
+        @Override
+        public String toString() {
+            return "EquatableOrderService#" + id;
+        }
+    }
+
     public interface AsyncService {
         CompletableFuture<String> asyncCall();
     }
@@ -233,56 +288,189 @@ class ProxyDispatcherTest {
     class ObjectMethods {
 
         @Test
-        void should_pass_equals_through_to_the_target_temporarily() {
+        void should_consider_two_proxies_with_equal_targets_equal() {
             // What is to be tested?
-            //   At 3.9, Object.equals on a proxy routes via the
-            //   temporary PassThrough entry. 3.10 will replace this
-            //   with proxy-aware equals semantics; until then, the
-            //   call lands on the target.
+            //   ARCHITECTURE.md §10 equals semantics: two proxies whose
+            //   real targets are equal must themselves be equal,
+            //   regardless of proxy-instance identity.
             // How will the test case be deemed successful and why?
-            //   target.equals(target) is true and target.equals(other)
-            //   is false; the proxy mirrors those answers because the
-            //   call passes through.
+            //   Two equal EquatableTarget instances wrapped in separate
+            //   proxies report equal via both Object.equals invocations.
             // Why is it important to test this test case?
-            //   Documents the transitional state so the 3.10 change
-            //   has a clear "before" baseline.
+            //   This is the central proxy-equality contract — collections
+            //   and caches keyed on the proxy would behave incorrectly if
+            //   broken.
 
             // Given
             InqPipeline pipeline = pipelineWithBulkhead();
-            DefaultOrderService target = new DefaultOrderService();
-            OrderService proxy = ProxyDispatcher.protect(pipeline, OrderService.class, target);
+            OrderService proxyA = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(7));
+            OrderService proxyB = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(7));
 
-            // When / Then — target.equals(target) is identity-true
-            assertThat(proxy.equals(target)).isTrue();
-            assertThat(proxy.equals("not the target")).isFalse();
+            // When / Then
+            assertThat(proxyA.equals(proxyB)).isTrue();
         }
 
         @Test
-        void should_pass_to_string_through_to_the_target_temporarily() {
+        void should_consider_two_proxies_with_distinct_targets_unequal() {
             // Given
             InqPipeline pipeline = pipelineWithBulkhead();
-            DefaultOrderService target = new DefaultOrderService();
-            OrderService proxy = ProxyDispatcher.protect(pipeline, OrderService.class, target);
+            OrderService proxyA = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(7));
+            OrderService proxyB = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(8));
 
-            // When
-            String s = proxy.toString();
-
-            // Then — the target's default Object.toString is returned
-            assertThat(s).isEqualTo(target.toString());
+            // When / Then
+            assertThat(proxyA.equals(proxyB)).isFalse();
         }
 
         @Test
-        void should_pass_hash_code_through_to_the_target_temporarily() {
+        void should_consider_a_proxy_unequal_to_a_non_proxy() {
+            // What is to be tested?
+            //   Comparing a proxy with a plain object (including the real
+            //   target itself) must return false because the "other"
+            //   side is not a JDK proxy. Per ARCHITECTURE.md §10 the
+            //   equals semantics are intentionally proxy-symmetric: only
+            //   two proxies can ever compare equal.
+            // How will the test case be deemed successful and why?
+            //   proxy.equals(target) is false even though the proxy's
+            //   real target is the same instance.
+            // Why is it important to test this test case?
+            //   This is the surprising-but-correct corollary of the §10
+            //   contract; pinning it stops regressions toward
+            //   "delegate-to-target-when-non-proxy" semantics that would
+            //   break symmetry.
+
             // Given
             InqPipeline pipeline = pipelineWithBulkhead();
             DefaultOrderService target = new DefaultOrderService();
-            OrderService proxy = ProxyDispatcher.protect(pipeline, OrderService.class, target);
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, target);
+
+            // When / Then
+            assertThat(proxy.equals(target)).isFalse();
+            assertThat(proxy.equals("not a proxy")).isFalse();
+        }
+
+        @Test
+        void should_consider_a_proxy_unequal_to_a_proxy_with_a_different_handler_type() {
+            // What is to be tested?
+            //   The other side must be a JDK proxy whose InvocationHandler
+            //   is an InqInvocationHandler. A JDK proxy with a foreign
+            //   handler must not compare equal even if it implements the
+            //   same interface.
+            // How will the test case be deemed successful and why?
+            //   proxy.equals(foreignProxy) returns false.
+            // Why is it important to test this test case?
+            //   Pins the handler-type guard — without it, equals would
+            //   either NPE on a missing realTarget accessor or accept
+            //   structurally-unrelated proxies as equal.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+            OrderService foreignProxy = (OrderService) java.lang.reflect.Proxy.newProxyInstance(
+                    OrderService.class.getClassLoader(),
+                    new Class<?>[]{OrderService.class},
+                    (p, m, a) -> null);
+
+            // When / Then
+            assertThat(proxy.equals(foreignProxy)).isFalse();
+        }
+
+        @Test
+        void should_consider_a_proxy_unequal_to_null() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When / Then
+            assertThat(proxy.equals(null)).isFalse();
+        }
+
+        @Test
+        void should_be_equals_symmetric_for_equal_targets() {
+            // What is to be tested?
+            //   For two proxies with equal targets, equality is
+            //   symmetric: proxyA.equals(proxyB) iff proxyB.equals(proxyA).
+            //   This is the most-likely-to-be-subtly-wrong property of
+            //   the §10 contract.
+            // How will the test case be deemed successful and why?
+            //   Both directions of the equality check return true.
+            // Why is it important to test this test case?
+            //   Object.equals's contract mandates symmetry; collections
+            //   relying on equals (HashMap, HashSet) break in subtle
+            //   ways when symmetry is violated.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxyA = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(11));
+            OrderService proxyB = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(11));
+
+            // When / Then
+            assertThat(proxyA.equals(proxyB)).isEqualTo(proxyB.equals(proxyA));
+            assertThat(proxyA.equals(proxyB)).isTrue();
+        }
+
+        @Test
+        void should_be_equals_symmetric_for_unequal_targets() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxyA = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(11));
+            OrderService proxyB = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new EquatableOrderService(12));
+
+            // When / Then
+            assertThat(proxyA.equals(proxyB)).isEqualTo(proxyB.equals(proxyA));
+            assertThat(proxyA.equals(proxyB)).isFalse();
+        }
+
+        @Test
+        void should_delegate_hash_code_to_the_real_target() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            EquatableOrderService target = new EquatableOrderService(42);
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, target);
+
+            // When / Then
+            assertThat(proxy.hashCode()).isEqualTo(target.hashCode());
+        }
+
+        @Test
+        void should_render_to_string_as_proxy_class_name_plus_target_string() {
+            // What is to be tested?
+            //   toString is descriptive — the proxy's class simple name
+            //   followed by the real target's toString in square brackets.
+            // How will the test case be deemed successful and why?
+            //   proxy.toString() equals "<ProxySimpleName>[<target>]".
+            //   The proxy's class simple name is JDK-generated and looks
+            //   like "$Proxy12"; we assert structural shape rather than
+            //   pinning the exact generated name.
+            // Why is it important to test this test case?
+            //   Documents the toString contract from §10 — readable
+            //   diagnostics, never the raw JDK default that hides what
+            //   the proxy wraps.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            EquatableOrderService target = new EquatableOrderService(99);
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, target);
 
             // When
-            int proxyHash = proxy.hashCode();
+            String rendered = proxy.toString();
 
             // Then
-            assertThat(proxyHash).isEqualTo(target.hashCode());
+            assertThat(rendered).isEqualTo(
+                    proxy.getClass().getSimpleName() + "[" + target + "]");
+            assertThat(rendered).contains(target.toString());
         }
     }
 

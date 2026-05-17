@@ -110,20 +110,51 @@ class InqInvocationHandlerTest {
 
         @Test
         void should_store_stack_id_passed_to_constructor() throws NoSuchMethodException {
-            // Given / When
+            // Given
+            RecordingTarget target = new RecordingTarget();
+
+            // When
             InqInvocationHandler handler = new InqInvocationHandler(
-                    42L, countingSource(), entriesFor(new RecordingTarget()));
+                    42L, countingSource(), target, entriesFor(target));
 
             // Then
             assertThat(handler.stackId()).isEqualTo(42L);
         }
 
         @Test
+        void should_expose_real_target_via_accessor() throws NoSuchMethodException {
+            // What is to be tested?
+            //   That the handler exposes the real target it was
+            //   constructed with via realTarget(). This is the read
+            //   path ObjectMethodHandler uses for cross-proxy equals
+            //   per ARCHITECTURE.md §10.
+            // How will the test case be deemed successful and why?
+            //   realTarget() returns the exact instance passed to the
+            //   constructor (reference identity, not equals).
+            // Why is it important to test this test case?
+            //   A regression that built a fresh wrapper or returned a
+            //   defensive copy would break equals symmetry and the
+            //   ProxyStackAdapter introspection path that depends on
+            //   the same accessor.
+
+            // Given
+            RecordingTarget target = new RecordingTarget();
+
+            // When
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), target, entriesFor(target));
+
+            // Then
+            assertThat(handler.realTarget()).isSameAs(target);
+        }
+
+        @Test
         void should_pull_call_ids_from_the_source() throws NoSuchMethodException {
             // Given — a source we control, returning a fixed sequence
             AtomicLong counter = new AtomicLong(99);
+            RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, counter::incrementAndGet, entriesFor(new RecordingTarget()));
+                    1L, counter::incrementAndGet, target, entriesFor(target));
 
             // When
             long first = handler.nextCallId();
@@ -148,8 +179,9 @@ class InqInvocationHandlerTest {
             //   and breaking ADR-034.
 
             // Given
+            RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(new RecordingTarget()));
+                    1L, countingSource(), target, entriesFor(target));
 
             // When
             long first = handler.nextCallId();
@@ -165,19 +197,32 @@ class InqInvocationHandlerTest {
         @Test
         void should_reject_null_call_id_source_with_npe() throws NoSuchMethodException {
             // Given
+            RecordingTarget target = new RecordingTarget();
+            Map<Method, MethodDispatchEntry> entries = entriesFor(target);
+
+            // When / Then
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new InqInvocationHandler(1L, null, target, entries))
+                    .withMessage("callIdSource");
+        }
+
+        @Test
+        void should_reject_null_real_target_with_npe() throws NoSuchMethodException {
+            // Given
             Map<Method, MethodDispatchEntry> entries = entriesFor(new RecordingTarget());
 
             // When / Then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new InqInvocationHandler(1L, null, entries))
-                    .withMessage("callIdSource");
+                    .isThrownBy(() -> new InqInvocationHandler(1L, countingSource(), null, entries))
+                    .withMessage("realTarget");
         }
 
         @Test
         void should_reject_null_entries_map_with_npe() {
             // Given / When / Then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new InqInvocationHandler(1L, countingSource(), null))
+                    .isThrownBy(() -> new InqInvocationHandler(
+                            1L, countingSource(), new RecordingTarget(), null))
                     .withMessage("entries");
         }
     }
@@ -203,7 +248,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
             Method doNothing = method("doNothing");
 
             // When
@@ -219,7 +264,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
             Method greet = method("greet", String.class);
 
             // When
@@ -253,7 +298,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
 
             // When — go through a real JDK proxy so the JDK supplies
             // the proxy parameter to invoke(...)
@@ -272,7 +317,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
             Method throwing = method("throwsRuntime");
 
             // When / Then
@@ -302,7 +347,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
             Method throwing = method("throwsUndeclared");
 
             // When / Then
@@ -316,7 +361,7 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), entriesFor(target));
+                    1L, countingSource(), target, entriesFor(target));
             Method throwing = method("throwsError");
 
             // When / Then
@@ -334,7 +379,7 @@ class InqInvocationHandlerTest {
             incomplete.put(greet,
                     MethodDispatchEntry.passThrough(MethodInvoker.create(target, greet)));
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), incomplete);
+                    1L, countingSource(), target, incomplete);
             Method missing = method("doNothing");
 
             // When / Then — cache miss is classified by the handler's

@@ -5,7 +5,7 @@ import eu.inqudium.annotation.evaluator.MethodPlan;
 import eu.inqudium.pipeline.InqPipeline;
 import eu.inqudium.pipeline.InqPipelineAnnotationEvaluator;
 import eu.inqudium.proxy.entries.MethodDispatchEntry;
-import eu.inqudium.proxy.invocation.MethodInvoker;
+import eu.inqudium.proxy.handler.ObjectMethodHandler.Kind;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -49,8 +49,21 @@ import java.util.Objects;
  */
 public final class ProxyBuilder {
 
+    private static final Map<Method, Kind> OBJECT_METHOD_KINDS = buildObjectMethodKinds();
+
     private ProxyBuilder() {
         // utility class
+    }
+
+    private static Map<Method, Kind> buildObjectMethodKinds() {
+        try {
+            return Map.of(
+                    Object.class.getMethod("equals", Object.class), Kind.EQUALS,
+                    Object.class.getMethod("hashCode"), Kind.HASH_CODE,
+                    Object.class.getMethod("toString"), Kind.TO_STRING);
+        } catch (NoSuchMethodException e) {
+            throw new ExceptionInInitializerError(e);
+        }
     }
 
     /**
@@ -97,32 +110,16 @@ public final class ProxyBuilder {
         }
 
         // Object-declared methods (equals, hashCode, toString) are not
-        // enumerated by serviceInterface.getMethods(), so the annotation
-        // evaluator never emits plans for them. The JDK proxy still
-        // routes equals/hashCode/toString to the InvocationHandler, so
-        // we must seed entries for them here. Temporary PassThrough
-        // routing — TODO(3.10) will reroute to ObjectMethodEntry via
-        // ObjectMethodHandler for proper proxy-aware equals/hashCode/
-        // toString semantics.
-        for (Method objMethod : objectMethods()) {
-            MethodInvoker invoker = MethodInvoker.create(target, objMethod);
-            entries.put(objMethod, MethodDispatchEntry.passThrough(invoker));
+        // enumerated by serviceInterface.getMethods() on an interface,
+        // so the annotation evaluator never emits plans for them. The
+        // JDK proxy still routes equals/hashCode/toString to the
+        // InvocationHandler, so we seed entries that route them to
+        // ObjectMethodHandler per ARCHITECTURE.md §10.
+        for (Map.Entry<Method, Kind> objectEntry : OBJECT_METHOD_KINDS.entrySet()) {
+            entries.put(objectEntry.getKey(),
+                    MethodDispatchEntry.objectMethod(objectEntry.getValue()));
         }
 
         return Map.copyOf(entries);
-    }
-
-    private static Method[] objectMethods() {
-        try {
-            return new Method[]{
-                    Object.class.getMethod("equals", Object.class),
-                    Object.class.getMethod("hashCode"),
-                    Object.class.getMethod("toString"),
-            };
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException(
-                    "Object class is missing one of its own methods — "
-                            + "the JDK is broken", e);
-        }
     }
 }
