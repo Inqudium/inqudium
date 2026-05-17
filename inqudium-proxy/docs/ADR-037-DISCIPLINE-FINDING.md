@@ -1,7 +1,8 @@
 # ADR-037 §6 module-loading discipline finding
 
-**Status:** Open
+**Status:** Resolved
 **Surfaced:** 2026-05-17 (sub-step 3.13 of REFACTORING_PROXY_REWRITE.md)
+**Resolved:** 2026-05-17 (sub-step 3.13a of REFACTORING_PROXY_REWRITE.md, PR #75)
 **Severity:** Architectural violation; deployment-breaking when
 inqudium-imperative is intentionally absent.
 
@@ -114,3 +115,26 @@ currently in the latter regime. Users who exclude
 `NoClassDefFoundError` at the moment their first proxy is built — a
 class of failure that is hard to diagnose without exactly this kind
 of test.
+
+## Resolution
+
+Sub-step 3.13a extracted the async-build flow out of
+`MethodDispatchEntryFactory` into a new
+`eu.inqudium.proxy.construction.AsyncEntryBuilder` class. Because
+`MethodDispatchEntryFactory.buildAsyncDecorated(...)` now reaches the
+async path via an `invokestatic` call (which is lazy at first
+invocation per JVMS §5.4) instead of via the `BootstrapMethods`
+attribute, `MethodDispatchEntryFactory.class`'s verifier no longer
+triggers eager loading of `AsyncLayerAction`.
+
+Empirically verified by `ModuleLoadingDisciplineTest` (both methods
+re-enabled):
+
+- `should_not_load_async_classes_when_building_a_sync_only_proxy`
+  passes — none of the seven async-related class names appears in
+  the URLClassLoader's `findLoadedClass` map after a sync-only proxy
+  is constructed.
+- `should_protect_sync_only_service_without_inqudium_imperative`
+  passes — a classpath that excludes the entire `inqudium-imperative`
+  JAR can still build and exercise a sync-only proxy without any
+  `NoClassDefFoundError`.

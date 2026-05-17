@@ -1,6 +1,5 @@
 package eu.inqudium.proxy.discipline;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -17,20 +16,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * when a sync-only service interface is protected by the proxy
  * machinery, no async-related class is loaded.
  *
- * <p><strong>Both tests are currently {@link Disabled @Disabled}.</strong>
- * Sub-step 3.13 surfaced an architectural finding (see
- * {@code inqudium-proxy/docs/ADR-037-DISCIPLINE-FINDING.md}): the JVM
- * eagerly resolves the {@code BootstrapMethods} table of
- * {@code MethodDispatchEntryFactory} during the first invocation of
- * its sync-path code, which forces
- * {@code eu.inqudium.imperative.core.pipeline.AsyncLayerAction} to
- * load. This violates ADR-037 §6&rsquo;s &ldquo;sync-only deployment
- * needs no inqudium-imperative&rdquo; contract. A follow-up
- * production-code refactor (move {@code toAsyncLayerAction} and its
- * BootstrapMethod off {@code MethodDispatchEntryFactory}) will fix
- * it. Both tests remain in the repo as living documentation; once
- * the discipline is repaired they should be re-enabled by removing
- * the {@link Disabled} annotations.</p>
+ * <p>Discipline contract empirically verified after the
+ * {@code AsyncEntryBuilder} extraction (sub-step 3.13a) resolved the
+ * leak documented in
+ * {@code inqudium-proxy/docs/ADR-037-DISCIPLINE-FINDING.md}. Both
+ * methods serve as permanent regression guards: any future change
+ * that re-introduces an async type reference into a class loaded on
+ * the sync path will trip these assertions.</p>
  *
  * <p><strong>Why URLClassLoader isolation.</strong> By the time
  * these tests run in a normal Surefire run, other test classes
@@ -56,11 +48,6 @@ final class ModuleLoadingDisciplineTest {
     );
 
     @Test
-    @Disabled("Pending the ADR-037 §6 finding fix — see test-class Javadoc and "
-            + "inqudium-proxy/docs/ADR-037-DISCIPLINE-FINDING.md. The strongest "
-            + "form of the discipline contract: a sync-only proxy can be "
-            + "constructed without inqudium-imperative on the classpath. "
-            + "Currently fails with NoClassDefFoundError: AsyncLayerAction.")
     void should_protect_sync_only_service_without_inqudium_imperative() throws Exception {
         // What is to be tested? — A URLClassLoader that excludes
         //   inqudium-imperative from its classpath can still build
@@ -112,14 +99,6 @@ final class ModuleLoadingDisciplineTest {
     }
 
     @Test
-    @Disabled("Pending the ADR-037 §6 finding fix — see test-class Javadoc and "
-            + "inqudium-proxy/docs/ADR-037-DISCIPLINE-FINDING.md. The JVM "
-            + "eagerly loads AsyncLayerAction during the first invocation of "
-            + "MethodDispatchEntryFactory's sync path because the class's "
-            + "BootstrapMethods table contains a MethodHandle for the "
-            + "toAsyncLayerAction helper. Six of the seven async-related "
-            + "class names are correctly absent; AsyncLayerAction is the "
-            + "single violator.")
     void should_not_load_async_classes_when_building_a_sync_only_proxy() throws Exception {
         // What is to be tested? — Constructing a sync-only proxy
         //   through pipeline.protect must not load any async-related
