@@ -1,11 +1,30 @@
 # ADR-040: `InqPipeline` composition model
 
-**Status:** Proposed  
-**Date:** 2026-05-14  
+**Status:** Accepted  
+**Date:** 2026-05-17  
 **Deciders:** Core team  
 **Related:** ADR-002 (functional decoration API), ADR-036 (annotation model),
 ADR-037 (module topology), ADR-041 (composition ordering — to follow),
 ADR-042 (pipeline contracts — to follow).
+
+## Implementation status
+
+**Accepted.** The `InqPipeline` interface, its builder, and the
+composition model specified by this ADR are implemented in
+`inqudium-pipeline`:
+
+- `eu.inqudium.pipeline.InqPipeline` — sealed-permits-default
+  interface with `elements()`, `protect(serviceInterface, target)`,
+  and the `builder()` factory
+- `eu.inqudium.pipeline.InqPipelineBuilder` — single-use builder
+  with pair-uniqueness validation on `(InqElementType, name)` per
+  this ADR's invariant
+- `eu.inqudium.pipeline.DefaultInqPipeline` — the immutable record
+  implementation
+
+The first-registration-wins registry behaviour and the immutable-
+after-build invariant are both pinned by tests in
+`inqudium-pipeline`.
 
 ## Context
 

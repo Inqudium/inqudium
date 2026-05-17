@@ -1,10 +1,24 @@
 # ADR-041: Pipeline composition ordering
 
-**Status:** Proposed  
-**Date:** 2026-05-14  
+**Status:** Accepted  
+**Date:** 2026-05-17  
 **Deciders:** Core team  
 **Related:** ADR-017 (superseded by this ADR), ADR-036 (annotation model — specifies how ordering is selected
 from annotations), ADR-040 (`InqPipeline` composition model), ADR-024 (Spring interceptor ordering).
+
+## Implementation status
+
+**Accepted.** The composition-ordering rules of this ADR are
+applied by:
+
+- `eu.inqudium.core.pipeline.PipelineOrdering` — the canonical
+  outer-to-inner ordering table by `InqElementType`
+- The `InqPipelineBuilder` honours this ordering at construction
+  time; `elements()` returns the pipeline in canonical
+  outer-to-inner order regardless of insertion sequence
+
+The annotation evaluator (ADR-036) relies on this canonical order
+when constructing `MethodPlan.Decorated.elementNamesOuterToInner()`.
 
 ## Context
 

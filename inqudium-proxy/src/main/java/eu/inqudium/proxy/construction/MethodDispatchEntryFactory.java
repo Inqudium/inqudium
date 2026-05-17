@@ -184,7 +184,6 @@ public final class MethodDispatchEntryFactory {
      *
      * <p>See ARCHITECTURE.md §7.2 for the full discussion.</p>
      */
-    @SuppressWarnings("unchecked")
     private static LayerAction<Void, Object> toLayerAction(InqElement element) {
         InqDecorator<?, ?> decorator = (InqDecorator<?, ?>) element;
         return (LayerAction<Void, Object>) (LayerAction<?, ?>) decorator;
