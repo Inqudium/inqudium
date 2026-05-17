@@ -693,6 +693,8 @@ The paradigm-validator design deserves explicit documentation. The validator mus
 
 Both are package-private static helpers in `eu.inqudium.proxy.construction`. The factory selects between them via the result of `ParadigmDetector.isAsyncMethod(method)`. No type hierarchy connects them — the relationship is via the factory's branching, not via polymorphism. This is simpler than an abstract `ParadigmValidator` interface with two implementations and equally satisfies the class-loading constraint.
 
+The discipline is empirically verified by `ModuleLoadingDisciplineTest`, which uses `URLClassLoader` isolation to immunise the assertions against test-ordering effects: a fresh `URLClassLoader` with parent set to the system classloader's parent (the platform loader) sees a clean class-loading state for every `eu.inqudium.*` type, regardless of what the system classloader has already loaded. The test currently records an open finding (`docs/ADR-037-DISCIPLINE-FINDING.md`) where `AsyncLayerAction` leaks onto the sync path; the two test methods are `@Disabled` until that finding is repaired.
+
 ---
 
 ## 14. Construction-time control flow
@@ -760,7 +762,8 @@ Test class structure mirrors package structure. Major categories (with sub-step 
 - **`MethodSignatureFormatterTest`** (3.12) — pins the ADR-039 canonical format: zero/one/many args, array and varargs collapse, multi-dimensional arrays, primitive arrays, anonymous-class binary-name fallback, generic-method erasure.
 - **`MethodLayersTest`** (3.12) — DTO construction, defensive copy of `layerDescriptions`, null guards on `methodSignature`/`method`.
 - **`ProxyStackInfoTest`** (3.12) — DTO construction, defensive copy of `elements` and `methodLayers`, null guard on `targetType`, acceptance of `Optional.empty()` for future paradigms.
-- **`ModuleLoadingDisciplineTest`** (planned 3.13) — a profile-controlled test verifies that running with `inqudium-imperative` absent does not load any async-related classes when no async methods exist on the service interface. Implementation: reflectively probe `getInitiatedClasses()` after a sync-only proxy is constructed and verify none of the async-related class names appear.
+- **`ModuleLoadingDisciplineTest`** (3.13) — verifies the ADR-037 §6 discipline empirically via a `URLClassLoader` whose parent is the system classloader's parent (the platform loader), so its `findLoadedClass` map is unaffected by the system classloader's prior loads. Two methods: one builds a sync-only proxy on a classpath that excludes `inqudium-imperative`; the other builds a sync-only proxy on the full classpath and probes for async-related class loads. Both are currently `@Disabled` against the open finding documented in `docs/ADR-037-DISCIPLINE-FINDING.md` — six of the seven async types respect the contract; `AsyncLayerAction` leaks via the `BootstrapMethods` table of `MethodDispatchEntryFactory` and forces a follow-up production-code refactor before the tests can be re-enabled.
+- **`RealBulkheadSmokeTest`** (3.13) — end-to-end smoke tests using the production `InqBulkhead` from `inqudium-imperative` (rather than the `FakeBulkhead` fixtures of sub-steps 3.5–3.12). Verifies concurrency limit, permit release on exception, and async permit semantics through `pipeline.protect(...)`. Anchors the proxy machinery against an actual production resilience element, not just hand-rolled doubles.
 
 Tests are flat where the framework requires (none of the proxy tests is a Spring Boot test, so the `@Nested` caveat from CLAUDE.md does not apply here).
 

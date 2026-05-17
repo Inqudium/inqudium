@@ -53,6 +53,17 @@
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
+        <!--
+          Test-scope only: enables building real InqBulkhead instances for the
+          end-to-end smoke tests landed in sub-step 3.13 of
+          REFACTORING_PROXY_REWRITE.md. Not visible to production code.
+        -->
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-config</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>
