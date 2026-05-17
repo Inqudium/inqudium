@@ -90,13 +90,13 @@ eu.inqudium.proxy
 │   ├── InqInvocationHandler           //   public — the handler installed on every proxy
 │   ├── PerProxyCache                  //   package-private — method-to-entry lookup
 │   ├── ArgNormalizer                  //   package-private — null Object[] → empty array
-│   └── ObjectMethodHandler            //   public — equals / hashCode / toString  (planned 3.10)
+│   └── ObjectMethodHandler            //   public — equals / hashCode / toString
 │
 ├── construction/                      // Public/package-private mix — phase 1 + 2 orchestration
 │   ├── ProxyBuilder                   //   public — orchestrates evaluator call + entry construction
 │   ├── ElementResolver                //   public — maps element names to InqElement instances
 │   ├── SyncParadigmValidator          //   package-private — sync paradigm check
-│   ├── AsyncParadigmValidator         //   package-private — async paradigm check  (planned 3.11)
+│   ├── AsyncParadigmValidator         //   package-private — async paradigm check
 │   └── MethodDispatchEntryFactory     //   public — classifies methods and builds entries
 │
 ├── entries/                           // Public sealed interface + package-private records
@@ -104,18 +104,18 @@ eu.inqudium.proxy
 │   ├── SyncCacheEntry                 //   package-private record — folded sync chain
 │   ├── PassThroughEntry               //   package-private record — direct target invocation
 │   ├── DefaultMethodEntry             //   package-private record — InvocationHandler.invokeDefault
-│   ├── ObjectMethodEntry              //   package-private record — dispatches to ObjectMethodHandler  (planned 3.10)
-│   └── AsyncCacheEntry                //   package-private record — folded async chain  (planned 3.11)
+│   ├── ObjectMethodEntry              //   package-private record — dispatches to ObjectMethodHandler
+│   └── AsyncCacheEntry                //   package-private record — folded async chain
 │
 ├── folding/                           // Public — chain materialisation
 │   ├── SyncChainFolder                //   public — builds FoldedSyncChain (closures-per-depth)
 │   ├── FoldedSyncChain                //   public @FunctionalInterface — the per-method invocation closure
-│   ├── AsyncChainFolder               //   public — builds FoldedAsyncChain  (planned 3.11)
-│   └── FoldedAsyncChain               //   public @FunctionalInterface — async counterpart  (planned 3.11)
+│   ├── AsyncChainFolder               //   public — builds FoldedAsyncChain
+│   └── FoldedAsyncChain               //   public @FunctionalInterface — async counterpart
 │
 ├── dispatch/                          // Public — paradigm classification
 │   ├── ParadigmDetector               //   public — isAsyncMethod(Method); JDK types only
-│   └── DetectionAsync                 //   public — probes for inqudium-imperative  (planned 3.11)
+│   └── DetectionAsync                 //   public — probes for inqudium-imperative
 │
 ├── invocation/                        // Public sealed interface + package-private implementations
 │   ├── MethodInvoker                  //   public sealed interface + create() factory
@@ -131,7 +131,7 @@ eu.inqudium.proxy
     └── ProxyStackInfo                 //   sealed-permitted DTO subtype
 ```
 
-Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.9.
+Class visibility follows a consistent rule: **public types are the cross-package contact surface**, even when marked "Internal API" in their Javadoc (i.e., not part of the stable user-facing API). The strictly-package-private types are records and helpers used only within one package. The `(planned N.NN)` markers indicate which sub-step of the proxy rewrite plan (`REFACTORING_PROXY_REWRITE.md`) introduces each class; everything without a marker is implemented as of sub-step 3.11.
 
 The `construction/annotation/` subpackage that v1 proposed is **removed** — that work is done in `eu.inqudium.annotation.evaluator` (existing module).
 
@@ -250,8 +250,8 @@ public sealed interface MethodDispatchEntry permits
     static MethodDispatchEntry passThrough(MethodInvoker invoker);
     static MethodDispatchEntry defaultMethod(Method defaultMethod);
     static MethodDispatchEntry syncCache(FoldedSyncChain chain, List<String> layerDescriptions);
-    static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind);    // 3.10
-    static MethodDispatchEntry asyncCache(FoldedAsyncChain chain, List<String> layerDescriptions);  // 3.11
+    static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind);
+    static MethodDispatchEntry asyncCache(FoldedAsyncChain chain, List<String> layerDescriptions);
 }
 ```
 
@@ -436,22 +436,76 @@ final class SyncCacheEntry implements MethodDispatchEntry {
 
 ### 7.4 Async folding
 
-Structurally analogous, with `AsyncLayerAction<Object[], Object>` and `AsyncLayerTerminal<Object[], Object>`. The classes `AsyncChainFolder`, `AsyncCacheEntry`, and the folder-internal types live in this module but reference `inqudium-imperative` types. They are loaded only via the `DetectionAsync.isPresent()` branch in `ProxyBuilder`. If `DetectionAsync.isPresent()` is `false` and any async method exists on the service interface, construction fails with the descriptive `IllegalStateException` from ADR-037 §3.
+Structurally analogous to §7.3, with `AsyncLayerAction<Object[], Object>` and `AsyncLayerTerminal<Object[], Object>`. `AsyncChainFolder`, `AsyncCacheEntry`, `FoldedAsyncChain`, and `AsyncParadigmValidator` live in this module but reference `inqudium-imperative` types. They are reached only via the `DetectionAsync.isPresent()`-guarded branch of `MethodDispatchEntryFactory`. If `DetectionAsync.isPresent()` is `false` and any async method exists on the service interface, construction fails with the descriptive `IllegalStateException` from ADR-037 §3 — and `AsyncParadigmValidator` itself is never loaded.
 
-The `AsyncCacheEntry.dispatch(...)` separates the two error paths per ADR-035 §10:
+The folded async chain is a functional interface that does **not** declare `throws`. The underlying `AsyncLayerAction.executeAsync(...)` in `inqudium-imperative` likewise declares no checked exceptions; the contract is that async callers always observe a stage:
 
 ```java
-@Override
-public Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) throws Throwable {
-    long stackId = handler.stackId();
-    long callId  = handler.nextCallId();
-    // chain.run may throw synchronously (e.g. permit-acquire failure before the async op starts),
-    // or return a CompletionStage which itself may complete exceptionally.
-    return chain.run(stackId, callId, args);
+@FunctionalInterface
+interface FoldedAsyncChain {
+    CompletionStage<Object> run(long stackId, long callId, Object[] args);
+}
+
+final class AsyncChainFolder {
+
+    static FoldedAsyncChain fold(
+            List<AsyncLayerAction<Void, Object>> storageLayers, MethodInvoker invoker) {
+        @SuppressWarnings("unchecked")
+        List<AsyncLayerAction<Object[], Object>> layers =
+                (List<AsyncLayerAction<Object[], Object>>) (List<?>) storageLayers;
+        return foldRecursive(layers, 0, invoker);
+    }
+
+    private static FoldedAsyncChain foldRecursive(
+            List<AsyncLayerAction<Object[], Object>> layers, int idx, MethodInvoker invoker) {
+        if (idx == layers.size()) {
+            // Terminal: invoke the target. The target's method declares
+            // CompletionStage<R> as return type, so the runtime result IS a
+            // CompletionStage. Sync-throws (target threw before returning the
+            // stage) become failedFuture for uniform async semantics.
+            return (stackId, callId, args) -> {
+                try {
+                    @SuppressWarnings("unchecked")
+                    CompletionStage<Object> stage =
+                            (CompletionStage<Object>) invoker.invoke(args);
+                    return stage;
+                } catch (Throwable t) {
+                    return CompletableFuture.failedFuture(t);
+                }
+            };
+        }
+        AsyncLayerAction<Object[], Object> head = layers.get(idx);
+        FoldedAsyncChain tail = foldRecursive(layers, idx + 1, invoker);
+        return (stackId, callId, args) -> {
+            AsyncLayerTerminal<Object[], Object> nextForHead =
+                    (s, c, a) -> tail.run(s, c, a);
+            return head.executeAsync(stackId, callId, args, nextForHead);
+        };
+    }
 }
 ```
 
-Synchronous throws from `chain.run` are classified by `ExceptionClassifier` in the `InqInvocationHandler.invoke`'s catch-block (§9). Async failures rolled into the returned `CompletionStage` are not reclassified — they propagate as the JDK conventions specify.
+The dispatch entry is therefore a single line:
+
+```java
+record AsyncCacheEntry(FoldedAsyncChain chain, List<String> layerDescriptions)
+        implements MethodDispatchEntry {
+
+    @Override
+    public Object dispatch(Object proxy, InqInvocationHandler handler, Object[] args) {
+        // Returns CompletionStage<Object>. RuntimeExceptions from layers
+        // propagate sync to InqInvocationHandler.invoke's catch-block. Async
+        // failures stay in the returned stage.
+        return chain.run(handler.stackId(), handler.nextCallId(), args);
+    }
+}
+```
+
+The error model deliberately separates two channels:
+
+- **Sync layer faults** (e.g. permit-acquire failure raised by a layer before it calls `next.executeAsync(...)`) propagate as plain `Throwable`s out of `chain.run(...)` and reach `InqInvocationHandler.invoke`'s catch-block. `ExceptionClassifier` classifies them per ADR-035 §10, exactly as for the sync path.
+- **Sync target throws** (the target's method body threw before it could produce a `CompletionStage`) are caught by the folder's terminal and wrapped in `CompletableFuture.failedFuture(t)`. The async caller therefore observes a single-channel error model: always a stage, never a sync throw from a method whose return type is `CompletionStage`.
+- **Async stage failures** (the target's returned stage completes exceptionally) stay inside the stage and propagate via the JDK conventions. `ExceptionClassifier` does not touch them.
 
 ### 7.5 The trivial entry types
 
@@ -554,7 +608,7 @@ public sealed interface MethodInvoker permits MethodHandleInvoker, ReflectiveInv
 
 Default choice: `MethodHandleInvoker`. The JVM property `inqudium.proxy.invoker=mh|reflective` lets us run side-by-side benchmarks without code changes. The two implementations differ in exception propagation: `MethodHandleInvoker` propagates the underlying throwable unwrapped, while `ReflectiveInvoker` wraps in `InvocationTargetException` per JDK convention — both routes are correctly handled by `ExceptionClassifier` / `ThrowableUnwrap` in §9.
 
-Async invocation does not use a separate `invokeAsync(...)` method on `MethodInvoker`; the same synchronous `invoke(...)` returns a `CompletionStage` for async methods (the return type is decided by the target's method signature, not the invoker). The async dispatch logic lives in `AsyncCacheEntry` (planned 3.11), which calls `invoke(...)` and chains on the resulting `CompletionStage`.
+Async invocation does not use a separate `invokeAsync(...)` method on `MethodInvoker`; the same synchronous `invoke(...)` returns a `CompletionStage` for async methods (the return type is decided by the target's method signature, not the invoker). The async dispatch logic lives in `AsyncCacheEntry` (sub-step 3.11), which calls `invoke(...)` via the folder's terminal and chains on the resulting `CompletionStage`.
 
 Arity-specialised invokers (one cached `MethodHandle` per arity) are deferred until benchmarks identify the array-unpack cost.
 
@@ -599,7 +653,7 @@ Two patterns must be respected by the implementation:
 The paradigm-validator design deserves explicit documentation. The validator must perform an `instanceof InqAsyncDecorator` check, which is a class-literal reference to a type from `inqudium-imperative`. **Decision: split-class structure.** Two separate classes:
 
 - `SyncParadigmValidator` (sub-step 3.8) — references only `InqDecorator` from `inqudium-core`; always loadable.
-- `AsyncParadigmValidator` (planned sub-step 3.11) — references `InqAsyncDecorator` from `inqudium-imperative`; loaded only via the `DetectionAsync.isPresent()` branch in `MethodDispatchEntryFactory`.
+- `AsyncParadigmValidator` (sub-step 3.11) — references `InqAsyncDecorator` from `inqudium-imperative`; loaded only via the `DetectionAsync.isPresent()` branch in `MethodDispatchEntryFactory`. The factory confines all async-only references — including the call to `AsyncParadigmValidator.validate(...)`, the construction of `FoldedAsyncChain`, and the layer-extraction helper `toAsyncLayerAction(...)` — to the private static method `buildAsyncDecorated(...)`. JVM lazy class loading (JVMS §5.4) resolves those references only when that method is first invoked, which only happens after `DetectionAsync.isPresent()` has returned `true`.
 
 Both are package-private static helpers in `eu.inqudium.proxy.construction`. The factory selects between them via the result of `ParadigmDetector.isAsyncMethod(method)`. No type hierarchy connects them — the relationship is via the factory's branching, not via polymorphism. This is simpler than an abstract `ParadigmValidator` interface with two implementations and equally satisfies the class-loading constraint.
 
@@ -655,14 +709,14 @@ Test class structure mirrors package structure. Major categories (with sub-step 
     - the evaluator's `InqAnnotationConfigurationException` propagates unchanged;
     - sync-decorator paradigm violations fail at construction with a descriptive message;
     - the immutable entries map carries one entry per service method plus `equals`/`hashCode`/`toString`;
-    - **(planned 3.11)** async-decorator paradigm violations fail at construction;
-    - **(planned 3.11)** missing `inqudium-imperative` for an async method fails with the ADR-037 §3 message.
+    - async-decorator paradigm violations fail at construction;
+    - missing `inqudium-imperative` for an async method fails with the ADR-037 §3 message (verified empirically by `ModuleLoadingDisciplineTest`, planned 3.13).
 - **`MethodDispatchEntryFactoryTest`** (3.8) — classification table per §7: PassThrough plans, Decorated plans, paradigm-validation propagation.
 - **`SyncChainFolderTest`** (3.7) — folding correctness. Categories: empty chain, single layer, multi-layer, **retry semantics** (a layer that calls `next.execute(...)` multiple times correctly re-enters the inner chain each time), exception propagation through middle layers.
-- **`ObjectMethodHandlerTest`** (planned 3.10) — `equals` symmetry, `hashCode` delegation, `toString` format.
+- **`ObjectMethodHandlerTest`** (3.10) — `equals` symmetry, `hashCode` delegation, `toString` format.
 - **`SyncParadigmValidatorTest`** (3.8) — sync method with non-`InqDecorator` element fails.
-- **`AsyncParadigmValidatorTest`** (planned 3.11) — async method with non-`InqAsyncDecorator` element fails.
-- **`AsyncChainFolderTest`** (planned 3.11) — folding correctness, async variant.
+- **`AsyncParadigmValidatorTest`** (3.11) — async method with non-`InqAsyncDecorator` element fails.
+- **`AsyncChainFolderTest`** (3.11) — folding correctness, async variant.
 - **`ExceptionClassifierTest`** (3.5) — runtime, error, declared-checked, undeclared-checked classification; `InvocationTargetException` and `UndeclaredThrowableException` unwrapping.
 - **`EndToEndPipelineProtectTest`** (3.9) — end-to-end through `pipeline.protect(...)`, exercising the `ProxyDelegation` reflection bridge.
 - **`InqPipelineProtectWithoutProxyTest`** (3.3/3.9, in `inqudium-pipeline`'s test sources) — the proxy-absent branch (`DetectionProxy.isPresent() == false`).

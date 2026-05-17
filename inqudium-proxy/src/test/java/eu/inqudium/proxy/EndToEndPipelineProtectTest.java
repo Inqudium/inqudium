@@ -4,8 +4,13 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.LayerTerminal;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
+import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 import eu.inqudium.pipeline.InqPipeline;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +45,47 @@ class EndToEndPipelineProtectTest {
         @Override
         public String throwsRuntime() {
             throw new IllegalStateException("runtime boom");
+        }
+    }
+
+    public interface AsyncOrderService {
+        CompletableFuture<String> fetchOrderAsync(long id);
+    }
+
+    public static final class DefaultAsyncOrderService implements AsyncOrderService {
+        @Override
+        public CompletableFuture<String> fetchOrderAsync(long id) {
+            return CompletableFuture.completedFuture("Order#" + id);
+        }
+    }
+
+    static final class FakeAsyncBulkhead implements InqAsyncDecorator<Object, Object> {
+
+        private final String name;
+
+        FakeAsyncBulkhead(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public InqElementType elementType() {
+            return InqElementType.BULKHEAD;
+        }
+
+        @Override
+        public InqEventPublisher eventPublisher() {
+            return null;
+        }
+
+        @Override
+        public CompletionStage<Object> executeAsync(long chainId, long callId, Object argument,
+                                                    AsyncLayerTerminal<Object, Object> next) {
+            return next.executeAsync(chainId, callId, argument);
         }
     }
 
@@ -120,6 +166,37 @@ class EndToEndPipelineProtectTest {
         assertThat(firstProxy).isNotSameAs(secondProxy);
         assertThat(firstProxy.greet("A")).isEqualTo("Hello, A!");
         assertThat(secondProxy.greet("B")).isEqualTo("Hello, B!");
+    }
+
+    @Test
+    void should_build_a_working_async_proxy_via_pipeline_protect() throws Exception {
+        // What is to be tested?
+        //   End-to-end exercise of the async dispatch path through
+        //   pipeline.protect — from the InqPipeline.protect interface
+        //   method, through the ProxyDelegation reflection bridge,
+        //   into the proxy's async branch, and back out via the
+        //   returned CompletionStage. Sub-step 3.11's full
+        //   integration point.
+        // How will the test case be deemed successful and why?
+        //   proxy.fetchOrderAsync(42).join() returns "Order#42". A
+        //   regression anywhere along that chain breaks the test.
+        // Why is it important to test this test case?
+        //   Top-level smoke test that ties everything together;
+        //   without it, the new async path could be wired backwards
+        //   and unit tests would still pass.
+
+        // Given
+        InqPipeline pipeline = InqPipeline.builder()
+                .shield(new FakeAsyncBulkhead("orderBh"))
+                .build();
+
+        // When
+        AsyncOrderService proxy = pipeline.protect(
+                AsyncOrderService.class, new DefaultAsyncOrderService());
+        String result = proxy.fetchOrderAsync(42L).get();
+
+        // Then
+        assertThat(result).isEqualTo("Order#42");
     }
 
     @Test

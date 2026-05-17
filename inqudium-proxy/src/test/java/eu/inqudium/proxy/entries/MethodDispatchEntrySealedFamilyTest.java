@@ -26,30 +26,30 @@ class MethodDispatchEntrySealedFamilyTest {
     }
 
     @Test
-    void should_permit_passthrough_default_method_sync_cache_and_object_method_entries() {
+    void should_permit_all_five_dispatch_entry_records() {
         // Given / When
         Class<?>[] permits = MethodDispatchEntry.class.getPermittedSubclasses();
 
-        // Then — sub-step 3.10 grows the family to four permits.
-        // Sub-step 3.11 will add AsyncCacheEntry; that sub-step updates
-        // this test.
+        // Then — sub-step 3.11 grows the family to five permits with
+        // the addition of AsyncCacheEntry.
         assertThat(permits).containsExactlyInAnyOrder(
                 PassThroughEntry.class,
                 DefaultMethodEntry.class,
                 SyncCacheEntry.class,
-                ObjectMethodEntry.class);
+                ObjectMethodEntry.class,
+                AsyncCacheEntry.class);
     }
 
     @Test
-    void should_expose_four_static_factories_on_the_sealed_interface() {
+    void should_expose_five_static_factories_on_the_sealed_interface() {
         // What is to be tested?
-        //   The sealed family ships four cross-package static factories
-        //   (passThrough, defaultMethod, syncCache, objectMethod). The
-        //   factory count and names are part of the construction
-        //   contract — ProxyBuilder and MethodDispatchEntryFactory rely
-        //   on these named entry points.
+        //   The sealed family ships five cross-package static factories
+        //   (passThrough, defaultMethod, syncCache, objectMethod,
+        //   asyncCache). The factory count and names are part of the
+        //   construction contract — ProxyBuilder and
+        //   MethodDispatchEntryFactory rely on these named entry points.
         // How will the test case be deemed successful and why?
-        //   The interface declares exactly four static factory methods,
+        //   The interface declares exactly five static factory methods,
         //   and each named factory is present.
         // Why is it important to test this test case?
         //   A regression that dropped or renamed a factory would compile
@@ -65,7 +65,7 @@ class MethodDispatchEntrySealedFamilyTest {
 
         // Then
         assertThat(staticFactoryNames).containsExactlyInAnyOrder(
-                "passThrough", "defaultMethod", "syncCache", "objectMethod");
+                "passThrough", "defaultMethod", "syncCache", "objectMethod", "asyncCache");
     }
 
     @Test

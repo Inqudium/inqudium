@@ -1,5 +1,6 @@
 package eu.inqudium.proxy.entries;
 
+import eu.inqudium.proxy.folding.FoldedAsyncChain;
 import eu.inqudium.proxy.folding.FoldedSyncChain;
 import eu.inqudium.proxy.handler.InqInvocationHandler;
 import eu.inqudium.proxy.handler.ObjectMethodHandler;
@@ -27,8 +28,7 @@ import java.util.List;
  *   <li>{@link ObjectMethodEntry} — {@code Object}-declared methods
  *       ({@code equals}, {@code hashCode}, {@code toString}), routed
  *       to {@link ObjectMethodHandler} (sub-step 3.10).</li>
- *   <li>{@code AsyncCacheEntry} — folded async chain, added in
- *       sub-step 3.11.</li>
+ *   <li>{@link AsyncCacheEntry} — folded async chain (sub-step 3.11).</li>
  * </ul>
  *
  * <p><strong>Internal API.</strong> Permitted types are
@@ -37,7 +37,8 @@ import java.util.List;
  * the type.</p>
  */
 public sealed interface MethodDispatchEntry
-        permits PassThroughEntry, DefaultMethodEntry, SyncCacheEntry, ObjectMethodEntry {
+        permits PassThroughEntry, DefaultMethodEntry, SyncCacheEntry,
+                ObjectMethodEntry, AsyncCacheEntry {
 
     /**
      * Dispatches the call to the entry's strategy and returns the
@@ -95,5 +96,16 @@ public sealed interface MethodDispatchEntry
      */
     static MethodDispatchEntry objectMethod(ObjectMethodHandler.Kind kind) {
         return new ObjectMethodEntry(kind);
+    }
+
+    /**
+     * Creates an {@link AsyncCacheEntry} carrying the pre-folded
+     * async chain and the layer descriptions for introspection
+     * (ADR-039). Cross-package entry point for {@code construction/};
+     * the permitted record itself stays package-private.
+     */
+    static MethodDispatchEntry asyncCache(
+            FoldedAsyncChain chain, List<String> layerDescriptions) {
+        return new AsyncCacheEntry(chain, layerDescriptions);
     }
 }
