@@ -1,7 +1,9 @@
 package eu.inqudium.proxy.handler;
 
+import eu.inqudium.core.element.InqElement;
 import eu.inqudium.proxy.InqUndeclaredCheckedException;
 import eu.inqudium.proxy.entries.MethodDispatchEntry;
+import eu.inqudium.proxy.introspection.MethodLayers;
 import eu.inqudium.proxy.invocation.MethodInvoker;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -9,7 +11,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
@@ -97,7 +101,7 @@ class InqInvocationHandlerTest {
         return TestService.class.getDeclaredMethod(name, params);
     }
 
-    private static Map<Method, MethodDispatchEntry> entriesFor(TestService target) throws NoSuchMethodException {
+    private static Map<Method, MethodDispatchEntry> entriesFor(TestService target) {
         Map<Method, MethodDispatchEntry> map = new HashMap<>();
         for (Method m : TestService.class.getDeclaredMethods()) {
             map.put(m, MethodDispatchEntry.passThrough(MethodInvoker.create(target, m)));
@@ -109,20 +113,21 @@ class InqInvocationHandlerTest {
     class State {
 
         @Test
-        void should_store_stack_id_passed_to_constructor() throws NoSuchMethodException {
+        void should_store_stack_id_passed_to_constructor() {
             // Given
             RecordingTarget target = new RecordingTarget();
 
             // When
             InqInvocationHandler handler = new InqInvocationHandler(
-                    42L, countingSource(), target, entriesFor(target));
+                    42L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
 
             // Then
             assertThat(handler.stackId()).isEqualTo(42L);
         }
 
         @Test
-        void should_expose_real_target_via_accessor() throws NoSuchMethodException {
+        void should_expose_real_target_via_accessor() {
             // What is to be tested?
             //   That the handler exposes the real target it was
             //   constructed with via realTarget(). This is the read
@@ -142,19 +147,21 @@ class InqInvocationHandlerTest {
 
             // When
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
 
             // Then
             assertThat(handler.realTarget()).isSameAs(target);
         }
 
         @Test
-        void should_pull_call_ids_from_the_source() throws NoSuchMethodException {
+        void should_pull_call_ids_from_the_source() {
             // Given — a source we control, returning a fixed sequence
             AtomicLong counter = new AtomicLong(99);
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, counter::incrementAndGet, target, entriesFor(target));
+                    1L, counter::incrementAndGet, target,
+                    TestService.class, List.of(), entriesFor(target));
 
             // When
             long first = handler.nextCallId();
@@ -164,7 +171,7 @@ class InqInvocationHandlerTest {
         }
 
         @Test
-        void should_pull_a_fresh_value_on_each_call_to_next_call_id() throws NoSuchMethodException {
+        void should_pull_a_fresh_value_on_each_call_to_next_call_id() {
             // What is to be tested?
             //   That nextCallId() does not cache or memoise — every call pulls
             //   a fresh value from the supplier.
@@ -181,7 +188,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
 
             // When
             long first = handler.nextCallId();
@@ -195,26 +203,56 @@ class InqInvocationHandlerTest {
         }
 
         @Test
-        void should_reject_null_call_id_source_with_npe() throws NoSuchMethodException {
+        void should_reject_null_call_id_source_with_npe() {
             // Given
             RecordingTarget target = new RecordingTarget();
             Map<Method, MethodDispatchEntry> entries = entriesFor(target);
 
             // When / Then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new InqInvocationHandler(1L, null, target, entries))
+                    .isThrownBy(() -> new InqInvocationHandler(
+                            1L, null, target, TestService.class, List.of(), entries))
                     .withMessage("callIdSource");
         }
 
         @Test
-        void should_reject_null_real_target_with_npe() throws NoSuchMethodException {
+        void should_reject_null_real_target_with_npe() {
             // Given
             Map<Method, MethodDispatchEntry> entries = entriesFor(new RecordingTarget());
 
             // When / Then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new InqInvocationHandler(1L, countingSource(), null, entries))
+                    .isThrownBy(() -> new InqInvocationHandler(
+                            1L, countingSource(), null,
+                            TestService.class, List.of(), entries))
                     .withMessage("realTarget");
+        }
+
+        @Test
+        void should_reject_null_service_interface_with_npe() {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            Map<Method, MethodDispatchEntry> entries = entriesFor(target);
+
+            // When / Then
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new InqInvocationHandler(
+                            1L, countingSource(), target, null, List.of(), entries))
+                    .withMessage("serviceInterface");
+        }
+
+        @Test
+        void should_reject_null_elements_with_npe() {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            Map<Method, MethodDispatchEntry> entries = entriesFor(target);
+
+            // When / Then
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new InqInvocationHandler(
+                            1L, countingSource(), target,
+                            TestService.class, null, entries))
+                    .withMessage("elements");
         }
 
         @Test
@@ -222,7 +260,8 @@ class InqInvocationHandlerTest {
             // Given / When / Then
             assertThatNullPointerException()
                     .isThrownBy(() -> new InqInvocationHandler(
-                            1L, countingSource(), new RecordingTarget(), null))
+                            1L, countingSource(), new RecordingTarget(),
+                            TestService.class, List.of(), null))
                     .withMessage("entries");
         }
     }
@@ -248,7 +287,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
             Method doNothing = method("doNothing");
 
             // When
@@ -264,7 +304,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
             Method greet = method("greet", String.class);
 
             // When
@@ -276,7 +317,7 @@ class InqInvocationHandlerTest {
         }
 
         @Test
-        void should_pass_the_proxy_and_handler_to_the_entry() throws Throwable {
+        void should_pass_the_proxy_and_handler_to_the_entry() {
             // What is to be tested?
             //   That handler.invoke calls dispatch with the proxy
             //   instance from the JDK and the handler itself. Verified
@@ -298,7 +339,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
 
             // When — go through a real JDK proxy so the JDK supplies
             // the proxy parameter to invoke(...)
@@ -317,7 +359,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
             Method throwing = method("throwsRuntime");
 
             // When / Then
@@ -347,7 +390,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
             Method throwing = method("throwsUndeclared");
 
             // When / Then
@@ -361,7 +405,8 @@ class InqInvocationHandlerTest {
             // Given
             RecordingTarget target = new RecordingTarget();
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, entriesFor(target));
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
             Method throwing = method("throwsError");
 
             // When / Then
@@ -379,7 +424,8 @@ class InqInvocationHandlerTest {
             incomplete.put(greet,
                     MethodDispatchEntry.passThrough(MethodInvoker.create(target, greet)));
             InqInvocationHandler handler = new InqInvocationHandler(
-                    1L, countingSource(), target, incomplete);
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), incomplete);
             Method missing = method("doNothing");
 
             // When / Then — cache miss is classified by the handler's
@@ -388,6 +434,124 @@ class InqInvocationHandlerTest {
             assertThatThrownBy(() -> handler.invoke(new Object(), missing, new Object[0]))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("No dispatch entry");
+        }
+    }
+
+    @Nested
+    class IntrospectionAccessors {
+
+        /**
+         * Test-only no-op element fixture. The handler's elements
+         * accessor needs concrete {@link InqElement} values to assert
+         * the snapshot semantics — using two distinguishable instances
+         * keeps the assertions clear and avoids touching the live
+         * pipeline machinery.
+         */
+        static final class FakeElement implements InqElement {
+            private final String name;
+
+            FakeElement(String name) {
+                this.name = name;
+            }
+
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public eu.inqudium.core.element.InqElementType elementType() {
+                return eu.inqudium.core.element.InqElementType.BULKHEAD;
+            }
+
+            @Override
+            public eu.inqudium.core.event.InqEventPublisher eventPublisher() {
+                return null;
+            }
+        }
+
+        @Test
+        void should_expose_the_service_interface_as_passed() {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
+
+            // When / Then
+            assertThat(handler.serviceInterface()).isSameAs(TestService.class);
+        }
+
+        @Test
+        void should_expose_an_immutable_snapshot_of_elements() {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), target,
+                    TestService.class,
+                    List.of(new FakeElement("a"), new FakeElement("b")),
+                    entriesFor(target));
+
+            // When
+            List<InqElement> elements = handler.elements();
+
+            // Then
+            assertThat(elements).extracting(InqElement::name).containsExactly("a", "b");
+            assertThatThrownBy(() -> elements.add(new FakeElement("c")))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void should_decouple_the_elements_snapshot_from_the_original_list() {
+            // What is to be tested?
+            //   Mutating the list passed to the constructor must not
+            //   affect the handler's snapshot — the handler defensively
+            //   copies via List.copyOf.
+            // How will the test case be deemed successful and why?
+            //   After mutating the source list, handler.elements() still
+            //   reflects the construction-time state.
+            // Why is it important to test this test case?
+            //   ADR-039's introspection contract promises a stable
+            //   construction-time snapshot of pipeline elements. A
+            //   shared reference would expose later mutations to
+            //   diagnostic consumers.
+
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            List<InqElement> source = new ArrayList<>();
+            source.add(new FakeElement("a"));
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), target,
+                    TestService.class, source, entriesFor(target));
+
+            // When — mutate the source after the handler was built
+            source.add(new FakeElement("b"));
+
+            // Then
+            assertThat(handler.elements())
+                    .extracting(InqElement::name)
+                    .containsExactly("a");
+        }
+
+        @Test
+        void should_build_method_layers_with_one_entry_per_service_method() {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), target,
+                    TestService.class, List.of(), entriesFor(target));
+
+            // When
+            List<MethodLayers> layers = handler.methodLayers();
+
+            // Then — one entry per declared TestService method
+            int declaredCount = TestService.class.getDeclaredMethods().length;
+            assertThat(layers).hasSize(declaredCount);
+            assertThat(layers).allSatisfy(ml -> {
+                assertThat(ml.method()).isPresent();
+                assertThat(ml.methodSignature()).startsWith("TestService.");
+                assertThat(ml.layerDescriptions()).isEmpty();
+            });
         }
     }
 }

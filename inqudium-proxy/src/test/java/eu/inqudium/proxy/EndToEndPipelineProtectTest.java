@@ -7,6 +7,8 @@ import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 import eu.inqudium.pipeline.InqPipeline;
+import eu.inqudium.proxy.introspection.ProxyStackAdapter;
+import eu.inqudium.proxy.introspection.ProxyStackInfo;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
@@ -197,6 +199,41 @@ class EndToEndPipelineProtectTest {
 
         // Then
         assertThat(result).isEqualTo("Order#42");
+    }
+
+    @Test
+    void should_produce_an_introspectable_proxy_via_pipeline_protect() {
+        // What is to be tested?
+        //   A proxy built via the public pipeline.protect(...) entry
+        //   point must be visible to ProxyStackAdapter. This is the
+        //   smoke test that ties the introspection adapter (3.12) to
+        //   the public surface — if the wiring around stackId,
+        //   serviceInterface, or the elements snapshot regresses,
+        //   this single assert chain catches it.
+        // How will the test case be deemed successful and why?
+        //   inspect(proxy) returns a ProxyStackInfo carrying a
+        //   positive stackId, the service interface as targetType,
+        //   the pipeline's single element, and a non-empty
+        //   methodLayers list.
+        // Why is it important to test this test case?
+        //   End-to-end glue test for ADR-039 visibility through the
+        //   public InqPipeline.protect API.
+
+        // Given
+        InqPipeline pipeline = InqPipeline.builder()
+                .shield(new FakeBulkhead("orderBh"))
+                .build();
+        OrderService proxy = pipeline.protect(
+                OrderService.class, new DefaultOrderService());
+
+        // When
+        ProxyStackInfo info = ProxyStackAdapter.inspect(proxy);
+
+        // Then
+        assertThat(info.stackId()).isPositive();
+        assertThat(info.targetType()).contains(OrderService.class);
+        assertThat(info.elements()).hasSize(pipeline.elements().size());
+        assertThat(info.methodLayers()).isNotEmpty();
     }
 
     @Test

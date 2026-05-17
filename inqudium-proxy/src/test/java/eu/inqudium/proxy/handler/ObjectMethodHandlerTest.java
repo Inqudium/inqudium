@@ -49,7 +49,8 @@ class ObjectMethodHandlerTest {
     private static Object proxyAround(Target target) {
         Map<Method, MethodDispatchEntry> empty = new HashMap<>();
         InqInvocationHandler handler = new InqInvocationHandler(
-                1L, () -> 1L, target, empty);
+                1L, () -> 1L, target,
+                SomeIface.class, java.util.List.of(), empty);
         return Proxy.newProxyInstance(
                 SomeIface.class.getClassLoader(),
                 new Class<?>[]{SomeIface.class},

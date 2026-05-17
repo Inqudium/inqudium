@@ -38,8 +38,13 @@ final class SyncCacheEntry implements MethodDispatchEntry {
     /**
      * Returns an immutable snapshot of the layer descriptions
      * (outermost-first), for introspection (ADR-039) and toString.
+     *
+     * <p>Overrides {@link MethodDispatchEntry#layerDescriptions()}'s
+     * empty-list default; must be {@code public} to match the
+     * interface's visibility.</p>
      */
-    List<String> layerDescriptions() {
+    @Override
+    public List<String> layerDescriptions() {
         return layerDescriptions;
     }
 }

@@ -69,22 +69,22 @@ class MethodDispatchEntrySealedFamilyTest {
     }
 
     @Test
-    void should_remain_an_internal_interface_with_no_default_methods() throws NoSuchMethodException {
+    void should_expose_one_abstract_dispatch_method_and_one_default_layer_descriptions_method() throws NoSuchMethodException {
         // What is to be tested?
-        //   The interface defines exactly one abstract instance method,
-        //   `dispatch`. Static factory methods may exist (sub-step 3.8
-        //   added passThrough / defaultMethod / syncCache as
-        //   cross-package entry points for construction code) but no
-        //   default method may sneak in: default methods would invite
-        //   external implementations to inherit behaviour rather than
-        //   compose with the sealed family.
+        //   The interface declares exactly two instance (non-static)
+        //   methods: the abstract `dispatch` (the core contract) and a
+        //   default `layerDescriptions` accessor (sub-step 3.12, used
+        //   by ProxyStackAdapter for ADR-039 introspection). Static
+        //   factories live on the interface but are filtered out here.
         // How will the test case be deemed successful and why?
-        //   Among the declared instance (non-static) methods there is
-        //   exactly one, `dispatch`, and it is not default.
+        //   The instance-method set has size two, `dispatch` is
+        //   abstract, and `layerDescriptions` is default. A regression
+        //   that turned `dispatch` into a default or that dropped
+        //   `layerDescriptions` would fail at the contract level.
         // Why is it important to test this test case?
         //   The sealed-family dispatch contract is foundational; an
-        //   accidental default method would change the dispatch model
-        //   silently.
+        //   accidental change to the method shape would silently
+        //   change the dispatch model and the introspection contract.
 
         // Given / When
         Method[] instanceMethods = java.util.Arrays.stream(
@@ -93,11 +93,16 @@ class MethodDispatchEntrySealedFamilyTest {
                 .toArray(Method[]::new);
 
         // Then
-        assertThat(instanceMethods).hasSize(1);
+        assertThat(instanceMethods).hasSize(2);
 
         Method dispatch = MethodDispatchEntry.class.getDeclaredMethod(
                 "dispatch", Object.class, InqInvocationHandler.class, Object[].class);
         assertThat(dispatch.getReturnType()).isEqualTo(Object.class);
         assertThat(dispatch.isDefault()).isFalse();
+
+        Method layerDescriptions = MethodDispatchEntry.class
+                .getDeclaredMethod("layerDescriptions");
+        assertThat(layerDescriptions.getReturnType()).isEqualTo(java.util.List.class);
+        assertThat(layerDescriptions.isDefault()).isTrue();
     }
 }

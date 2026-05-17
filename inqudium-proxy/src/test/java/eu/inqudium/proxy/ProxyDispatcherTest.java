@@ -9,6 +9,9 @@ import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
 import eu.inqudium.pipeline.InqPipeline;
+import eu.inqudium.proxy.introspection.MethodLayers;
+import eu.inqudium.proxy.introspection.ProxyStackAdapter;
+import eu.inqudium.proxy.introspection.ProxyStackInfo;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -794,6 +797,106 @@ class ProxyDispatcherTest {
             assertThatThrownBy(result::get)
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("sync throw from async method");
+        }
+    }
+
+    @Nested
+    class Introspection {
+
+        @Test
+        void should_produce_a_proxy_that_proxy_stack_adapter_supports() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When / Then
+            assertThat(ProxyStackAdapter.supports(proxy)).isTrue();
+        }
+
+        @Test
+        void should_carry_the_constructed_stack_id_in_the_stack_info() {
+            // What is to be tested?
+            //   ProxyStackInfo.stackId() must equal the stackId
+            //   allocated by ProxyDispatcher for the proxy. We can't
+            //   directly probe the constructed stackId; instead we
+            //   build two proxies and assert their stackIds differ,
+            //   which is the observable evidence that the per-proxy
+            //   ID is honoured.
+            // How will the test case be deemed successful and why?
+            //   Two consecutively-built proxies report distinct,
+            //   positive stack IDs in their respective stack infos.
+            // Why is it important to test this test case?
+            //   Stack IDs are the primary diagnostic-correlation
+            //   handle; collisions would defeat ADR-034's purpose.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService firstProxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+            OrderService secondProxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo firstInfo = ProxyStackAdapter.inspect(firstProxy);
+            ProxyStackInfo secondInfo = ProxyStackAdapter.inspect(secondProxy);
+
+            // Then
+            assertThat(firstInfo.stackId()).isPositive();
+            assertThat(secondInfo.stackId()).isPositive();
+            assertThat(firstInfo.stackId()).isNotEqualTo(secondInfo.stackId());
+        }
+
+        @Test
+        void should_carry_the_service_interface_as_target_type_in_the_stack_info() {
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo info = ProxyStackAdapter.inspect(proxy);
+
+            // Then
+            assertThat(info.targetType()).contains(OrderService.class);
+        }
+
+        @Test
+        void should_include_layer_descriptions_for_decorated_methods_in_the_stack_info() {
+            // What is to be tested?
+            //   The @InqBulkhead-annotated `greet` method routes through
+            //   a SyncCacheEntry whose layerDescriptions carry the
+            //   pipeline layer's name. The stack info must surface
+            //   that string while pass-through methods (`getOrder`,
+            //   `defaultGreeting`, `throws*`) and Object methods report
+            //   an empty layer list.
+            // How will the test case be deemed successful and why?
+            //   The MethodLayers entry for `greet(String)` has a
+            //   non-empty layerDescriptions list; every other entry
+            //   has an empty list.
+            // Why is it important to test this test case?
+            //   Pins the contract that decorated methods are visible
+            //   to introspection (ADR-039), while non-decorated ones
+            //   are explicitly empty. A regression that mixed the two
+            //   would obscure the resilience topology.
+
+            // Given
+            InqPipeline pipeline = pipelineWithBulkhead();
+            OrderService proxy = ProxyDispatcher.protect(
+                    pipeline, OrderService.class, new DefaultOrderService());
+
+            // When
+            ProxyStackInfo info = ProxyStackAdapter.inspect(proxy);
+            MethodLayers greetLayers = info.methodLayers().stream()
+                    .filter(ml -> ml.methodSignature().equals("OrderService.greet(String)"))
+                    .findFirst()
+                    .orElseThrow();
+
+            // Then
+            assertThat(greetLayers.layerDescriptions()).isNotEmpty();
+            assertThat(info.methodLayers().stream()
+                    .filter(ml -> !ml.methodSignature().equals("OrderService.greet(String)")))
+                    .allSatisfy(ml -> assertThat(ml.layerDescriptions()).isEmpty());
         }
     }
 }
