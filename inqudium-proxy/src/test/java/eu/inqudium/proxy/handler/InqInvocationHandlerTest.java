@@ -1,10 +1,16 @@
 package eu.inqudium.proxy.handler;
 
+import eu.inqudium.proxy.InqUndeclaredCheckedException;
+import eu.inqudium.proxy.entries.MethodDispatchEntry;
+import eu.inqudium.proxy.invocation.MethodInvoker;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.InvocationHandler;
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
@@ -19,59 +25,105 @@ class InqInvocationHandlerTest {
         return counter::incrementAndGet;
     }
 
-    @Nested
-    class StubBehaviour {
+    public interface TestService {
+        String greet(String name);
 
-        @Test
-        void should_throw_unsupported_operation_when_invoke_is_called() throws NoSuchMethodException {
-            // Given
-            InqInvocationHandler handler = new InqInvocationHandler(1L, countingSource());
-            Method method = Object.class.getMethod("toString");
+        int sum(int a, int b);
 
-            // When / Then
-            assertThatThrownBy(() -> handler.invoke(new Object(), method, new Object[0]))
-                    .isInstanceOf(UnsupportedOperationException.class);
+        void doNothing();
+
+        String throwsRuntime();
+
+        String throwsChecked() throws IOException;
+
+        String throwsUndeclared();
+
+        String throwsError();
+    }
+
+    public static final class RecordingTarget implements TestService {
+
+        Object[] greetArgs;
+        int doNothingCallCount;
+
+        @Override
+        public String greet(String name) {
+            greetArgs = new Object[]{name};
+            return "Hello, " + name + "!";
         }
 
-        @Test
-        void should_carry_a_message_pointing_at_sub_step_3_9() throws NoSuchMethodException {
-            // Given
-            InqInvocationHandler handler = new InqInvocationHandler(1L, countingSource());
-            Method method = Object.class.getMethod("toString");
-
-            // When / Then — the stub message must reference the sub-step that
-            // fleshes the handler out so a future reader of the stack trace can
-            // navigate to the right place.
-            assertThatThrownBy(() -> handler.invoke(new Object(), method, new Object[0]))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("3.9");
+        @Override
+        public int sum(int a, int b) {
+            return a + b;
         }
 
-        @Test
-        void should_be_an_invocation_handler() {
-            // Given / When / Then
-            assertThat(new InqInvocationHandler(1L, countingSource()))
-                    .isInstanceOf(InvocationHandler.class);
+        @Override
+        public void doNothing() {
+            doNothingCallCount++;
         }
+
+        @Override
+        public String throwsRuntime() {
+            throw new IllegalStateException("runtime boom");
+        }
+
+        @Override
+        public String throwsChecked() throws IOException {
+            throw new IOException("declared boom");
+        }
+
+        @Override
+        public String throwsUndeclared() {
+            // sneakyThrow a checked exception that throwsUndeclared()
+            // does not declare. The signature does not list IOException
+            // — that's exactly the undeclared-checked situation the
+            // classifier must catch.
+            sneakyThrow(new IOException("undeclared boom"));
+            return null;
+        }
+
+        @Override
+        public String throwsError() {
+            throw new AssertionError("error boom");
+        }
+
+        @SuppressWarnings("unchecked")
+        private static <E extends Throwable> void sneakyThrow(Throwable t) throws E {
+            throw (E) t;
+        }
+    }
+
+    private static Method method(String name, Class<?>... params) throws NoSuchMethodException {
+        return TestService.class.getDeclaredMethod(name, params);
+    }
+
+    private static Map<Method, MethodDispatchEntry> entriesFor(TestService target) throws NoSuchMethodException {
+        Map<Method, MethodDispatchEntry> map = new HashMap<>();
+        for (Method m : TestService.class.getDeclaredMethods()) {
+            map.put(m, MethodDispatchEntry.passThrough(MethodInvoker.create(target, m)));
+        }
+        return map;
     }
 
     @Nested
     class State {
 
         @Test
-        void should_store_stack_id_passed_to_constructor() {
+        void should_store_stack_id_passed_to_constructor() throws NoSuchMethodException {
             // Given / When
-            InqInvocationHandler handler = new InqInvocationHandler(42L, countingSource());
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    42L, countingSource(), entriesFor(new RecordingTarget()));
 
             // Then
             assertThat(handler.stackId()).isEqualTo(42L);
         }
 
         @Test
-        void should_pull_call_ids_from_the_source() {
+        void should_pull_call_ids_from_the_source() throws NoSuchMethodException {
             // Given — a source we control, returning a fixed sequence
             AtomicLong counter = new AtomicLong(99);
-            InqInvocationHandler handler = new InqInvocationHandler(1L, counter::incrementAndGet);
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, counter::incrementAndGet, entriesFor(new RecordingTarget()));
 
             // When
             long first = handler.nextCallId();
@@ -81,7 +133,7 @@ class InqInvocationHandlerTest {
         }
 
         @Test
-        void should_pull_a_fresh_value_on_each_call_to_next_call_id() {
+        void should_pull_a_fresh_value_on_each_call_to_next_call_id() throws NoSuchMethodException {
             // What is to be tested?
             //   That nextCallId() does not cache or memoise — every call pulls
             //   a fresh value from the supplier.
@@ -96,7 +148,8 @@ class InqInvocationHandlerTest {
             //   and breaking ADR-034.
 
             // Given
-            InqInvocationHandler handler = new InqInvocationHandler(1L, countingSource());
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(new RecordingTarget()));
 
             // When
             long first = handler.nextCallId();
@@ -110,11 +163,186 @@ class InqInvocationHandlerTest {
         }
 
         @Test
-        void should_reject_null_call_id_source_with_npe() {
+        void should_reject_null_call_id_source_with_npe() throws NoSuchMethodException {
+            // Given
+            Map<Method, MethodDispatchEntry> entries = entriesFor(new RecordingTarget());
+
+            // When / Then
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new InqInvocationHandler(1L, null, entries))
+                    .withMessage("callIdSource");
+        }
+
+        @Test
+        void should_reject_null_entries_map_with_npe() {
             // Given / When / Then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new InqInvocationHandler(1L, null))
-                    .withMessage("callIdSource");
+                    .isThrownBy(() -> new InqInvocationHandler(1L, countingSource(), null))
+                    .withMessage("entries");
+        }
+    }
+
+    @Nested
+    class Dispatch {
+
+        @Test
+        void should_normalise_null_args_before_dispatching() throws Throwable {
+            // What is to be tested?
+            //   The handler must replace a null args array (the JDK
+            //   convention for no-arg methods) with an empty array
+            //   before passing it to the dispatch entry. Otherwise
+            //   MethodInvoker.invoke(null) would NPE on no-arg methods.
+            // How will the test case be deemed successful and why?
+            //   Calling invoke with null args for doNothing() must
+            //   succeed and reach the target. A non-normalised null
+            //   would surface as an NPE deep inside the invoker.
+            // Why is it important to test this test case?
+            //   Pins the contract that the handler is the single
+            //   normalisation site for the proxy invocation's args.
+
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+            Method doNothing = method("doNothing");
+
+            // When
+            Object result = handler.invoke(new Object(), doNothing, null);
+
+            // Then
+            assertThat(result).isNull();
+            assertThat(target.doNothingCallCount).isEqualTo(1);
+        }
+
+        @Test
+        void should_route_to_the_entry_returned_by_the_cache() throws Throwable {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+            Method greet = method("greet", String.class);
+
+            // When
+            Object result = handler.invoke(new Object(), greet, new Object[]{"World"});
+
+            // Then — the right entry's target method was invoked
+            assertThat(result).isEqualTo("Hello, World!");
+            assertThat(target.greetArgs).containsExactly("World");
+        }
+
+        @Test
+        void should_pass_the_proxy_and_handler_to_the_entry() throws Throwable {
+            // What is to be tested?
+            //   That handler.invoke calls dispatch with the proxy
+            //   instance from the JDK and the handler itself. Verified
+            //   indirectly by routing the call through a real JDK
+            //   proxy and asserting the end-to-end result. If the
+            //   handler dropped the proxy parameter, JDK-internals
+            //   would surface a mismatch.
+            // How will the test case be deemed successful and why?
+            //   The proxy returned by Proxy.newProxyInstance behaves
+            //   as the service, returning the target's value through
+            //   the dispatch entry.
+            // Why is it important to test this test case?
+            //   Catches the regression where a future refactor passes
+            //   the wrong reference (or null) as the proxy/handler
+            //   parameter to dispatch — DefaultMethodEntry and any
+            //   future Object-method entries depend on this being
+            //   correct.
+
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+
+            // When — go through a real JDK proxy so the JDK supplies
+            // the proxy parameter to invoke(...)
+            TestService proxy = (TestService) Proxy.newProxyInstance(
+                    TestService.class.getClassLoader(),
+                    new Class<?>[]{TestService.class},
+                    handler);
+
+            // Then
+            assertThat(proxy.greet("World")).isEqualTo("Hello, World!");
+            assertThat(proxy.sum(40, 2)).isEqualTo(42);
+        }
+
+        @Test
+        void should_propagate_a_runtime_exception_from_the_entry_unchanged() throws NoSuchMethodException {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+            Method throwing = method("throwsRuntime");
+
+            // When / Then
+            assertThatThrownBy(() -> handler.invoke(new Object(), throwing, new Object[0]))
+                    .isExactlyInstanceOf(IllegalStateException.class)
+                    .hasMessage("runtime boom");
+        }
+
+        @Test
+        void should_classify_an_undeclared_checked_exception_as_inq_undeclared() throws NoSuchMethodException {
+            // What is to be tested?
+            //   When the target throws a checked exception that the
+            //   service method does not declare, the handler must
+            //   classify it via ExceptionClassifier and surface an
+            //   InqUndeclaredCheckedException.
+            // How will the test case be deemed successful and why?
+            //   The thrown exception is exactly
+            //   InqUndeclaredCheckedException with the original
+            //   IOException as its cause.
+            // Why is it important to test this test case?
+            //   This is the contract from ADR-035 §10: undeclared
+            //   checked exceptions must be wrapped, never propagated
+            //   raw, so reflective callers cannot see surprising
+            //   types on a method whose signature did not advertise
+            //   them.
+
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+            Method throwing = method("throwsUndeclared");
+
+            // When / Then
+            assertThatThrownBy(() -> handler.invoke(new Object(), throwing, new Object[0]))
+                    .isExactlyInstanceOf(InqUndeclaredCheckedException.class)
+                    .hasCauseExactlyInstanceOf(IOException.class);
+        }
+
+        @Test
+        void should_propagate_an_error_from_the_entry_unchanged() throws NoSuchMethodException {
+            // Given
+            RecordingTarget target = new RecordingTarget();
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), entriesFor(target));
+            Method throwing = method("throwsError");
+
+            // When / Then
+            assertThatThrownBy(() -> handler.invoke(new Object(), throwing, new Object[0]))
+                    .isExactlyInstanceOf(AssertionError.class)
+                    .hasMessage("error boom");
+        }
+
+        @Test
+        void should_throw_illegal_state_when_the_method_is_not_in_the_cache() throws NoSuchMethodException {
+            // Given — entries map intentionally missing the doNothing entry
+            RecordingTarget target = new RecordingTarget();
+            Map<Method, MethodDispatchEntry> incomplete = new HashMap<>();
+            Method greet = method("greet", String.class);
+            incomplete.put(greet,
+                    MethodDispatchEntry.passThrough(MethodInvoker.create(target, greet)));
+            InqInvocationHandler handler = new InqInvocationHandler(
+                    1L, countingSource(), incomplete);
+            Method missing = method("doNothing");
+
+            // When / Then — cache miss is classified by the handler's
+            // try/catch, but IllegalStateException is a RuntimeException
+            // so the classifier returns it unchanged.
+            assertThatThrownBy(() -> handler.invoke(new Object(), missing, new Object[0]))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("No dispatch entry");
         }
     }
 }

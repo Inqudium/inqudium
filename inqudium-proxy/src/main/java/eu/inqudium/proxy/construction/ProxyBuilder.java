@@ -5,6 +5,7 @@ import eu.inqudium.annotation.evaluator.MethodPlan;
 import eu.inqudium.pipeline.InqPipeline;
 import eu.inqudium.pipeline.InqPipelineAnnotationEvaluator;
 import eu.inqudium.proxy.entries.MethodDispatchEntry;
+import eu.inqudium.proxy.invocation.MethodInvoker;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -95,6 +96,33 @@ public final class ProxyBuilder {
             entries.put(method, dispatchEntry);
         }
 
+        // Object-declared methods (equals, hashCode, toString) are not
+        // enumerated by serviceInterface.getMethods(), so the annotation
+        // evaluator never emits plans for them. The JDK proxy still
+        // routes equals/hashCode/toString to the InvocationHandler, so
+        // we must seed entries for them here. Temporary PassThrough
+        // routing — TODO(3.10) will reroute to ObjectMethodEntry via
+        // ObjectMethodHandler for proper proxy-aware equals/hashCode/
+        // toString semantics.
+        for (Method objMethod : objectMethods()) {
+            MethodInvoker invoker = MethodInvoker.create(target, objMethod);
+            entries.put(objMethod, MethodDispatchEntry.passThrough(invoker));
+        }
+
         return Map.copyOf(entries);
+    }
+
+    private static Method[] objectMethods() {
+        try {
+            return new Method[]{
+                    Object.class.getMethod("equals", Object.class),
+                    Object.class.getMethod("hashCode"),
+                    Object.class.getMethod("toString"),
+            };
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(
+                    "Object class is missing one of its own methods — "
+                            + "the JDK is broken", e);
+        }
     }
 }

@@ -6,7 +6,14 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class InqPipelineProtectStubTest {
+/**
+ * Tests the {@link InqPipeline#protect(Class, Object)} default
+ * method's behaviour <strong>when {@code inqudium-proxy} is not on
+ * the classpath</strong> — the case in this test module's
+ * classpath. The opposite branch (delegation succeeds when proxy is
+ * present) is tested in {@code inqudium-proxy}'s test sources.
+ */
+class InqPipelineProtectWithoutProxyTest {
 
     @Test
     void should_throw_illegal_state_exception_when_proxy_module_is_absent() {
@@ -16,8 +23,9 @@ class InqPipelineProtectStubTest {
                 .build();
         SomeService target = name -> "hello " + name;
 
-        // When / Then — DetectionProxy.isPresent() is false at sub-step
-        // 3.3, so the absence guard must fire before any further work.
+        // When / Then — DetectionProxy.isPresent() is false in this
+        // module's test classpath, so the absence guard must fire
+        // before any further work.
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(() -> pipeline.protect(SomeService.class, target));
     }
@@ -42,19 +50,21 @@ class InqPipelineProtectStubTest {
     @Test
     void should_propagate_null_serviceinterface_as_a_meaningful_error() {
         // What is to be tested?
-        //   The behaviour of protect(null, target) at sub-step 3.3.
+        //   The behaviour of protect(null, target) when the proxy
+        //   module is absent from the classpath.
         // How will the test case be deemed successful and why?
-        //   The absence guard runs before any argument validation, so at
-        //   3.3 the call must raise IllegalStateException regardless of
-        //   the null service-interface argument. The exception type is
-        //   the same one users see for "module missing" — meaningful
-        //   enough to make the failure mode obvious.
+        //   The absence guard runs before any argument validation, so
+        //   the call must raise IllegalStateException regardless of
+        //   the null service-interface argument. The exception type
+        //   is the same one users see for "module missing" —
+        //   meaningful enough to make the failure mode obvious.
         // Why is it important to test this test case?
         //   ADR-037 does not nail down the exception type for null
-        //   serviceInterface; this test pins the observable behaviour
-        //   at the 3.3 milestone so that 3.9 (which wires the real
-        //   delegation) can intentionally evolve it rather than
-        //   accidentally regress it.
+        //   serviceInterface when proxy is absent; this test pins the
+        //   observable behaviour at the module-absent boundary so a
+        //   future refactor that wires proxy-side validation can
+        //   intentionally evolve it rather than accidentally regress
+        //   it.
 
         // Given
         InqPipeline pipeline = InqPipeline.builder()
@@ -68,7 +78,7 @@ class InqPipelineProtectStubTest {
     }
 
     /**
-     * Tiny test-local service interface for the stub.
+     * Tiny test-local service interface.
      */
     interface SomeService {
         String greet(String name);

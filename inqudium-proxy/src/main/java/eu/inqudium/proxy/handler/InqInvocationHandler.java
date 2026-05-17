@@ -1,7 +1,11 @@
 package eu.inqudium.proxy.handler;
 
+import eu.inqudium.proxy.entries.MethodDispatchEntry;
+import eu.inqudium.proxy.exception.ExceptionClassifier;
+
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.LongSupplier;
 
@@ -9,33 +13,39 @@ import java.util.function.LongSupplier;
  * The {@link InvocationHandler} installed on every JDK proxy
  * produced by {@code ProxyDispatcher.protect(...)}.
  *
- * <p>Holds the per-proxy state shared by every dispatch entry:</p>
- * <ul>
- *   <li>{@code stackId} — the stable ID of the proxy stack, per
- *       ADR-034. Constant for the lifetime of the proxy.</li>
- *   <li>{@code callIdSource} — a fresh call-ID generator for this
- *       proxy. Each method invocation pulls one ID from it via
- *       {@link #nextCallId()}.</li>
- * </ul>
+ * <p>Holds the per-proxy state and routes every method invocation
+ * through the right {@link MethodDispatchEntry} from the
+ * {@link PerProxyCache}.</p>
  *
- * <p><strong>Internal API.</strong> This class is {@code public} so
- * the dispatch entries in {@code eu.inqudium.proxy.entries} can
- * reference it; it is not part of {@code inqudium-proxy}'s stable
- * public API.</p>
+ * <p><strong>Internal API.</strong> Public for cross-package
+ * reference; not part of the stable public surface.</p>
  *
- * <p><strong>Sub-step 3.7 state:</strong> state and accessors are
- * in place; {@link #invoke} still throws
- * {@link UnsupportedOperationException}. The dispatch loop arrives
- * in sub-step 3.9.</p>
+ * <h2>Hot-path</h2>
+ * <p>Per ARCHITECTURE.md §8:</p>
+ * <pre>
+ * JDK proxy → InqInvocationHandler.invoke(...)
+ *         → ArgNormalizer.normalise(args)
+ *         → cache.entryFor(method)            // HashMap lookup
+ *         → entry.dispatch(...)
+ * </pre>
+ * <p>Synchronous failures are routed through
+ * {@link ExceptionClassifier} per ADR-035 §10. Failures inside an
+ * async method's {@code CompletionStage} return value are not
+ * reclassified — they propagate via the JDK conventions.</p>
  */
 public final class InqInvocationHandler implements InvocationHandler {
 
     private final long stackId;
     private final LongSupplier callIdSource;
+    private final PerProxyCache cache;
 
-    public InqInvocationHandler(long stackId, LongSupplier callIdSource) {
+    public InqInvocationHandler(
+            long stackId,
+            LongSupplier callIdSource,
+            Map<Method, MethodDispatchEntry> entries) {
         this.stackId = stackId;
         this.callIdSource = Objects.requireNonNull(callIdSource, "callIdSource");
+        this.cache = new PerProxyCache(Objects.requireNonNull(entries, "entries"));
     }
 
     /**
@@ -56,9 +66,12 @@ public final class InqInvocationHandler implements InvocationHandler {
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        throw new UnsupportedOperationException(
-                "InqInvocationHandler.invoke arrives in sub-step 3.9. "
-                        + "Sub-step 3.7 added stackId and callIdSource state "
-                        + "for the dispatch entries to read.");
+        Object[] normalisedArgs = ArgNormalizer.normalise(args);
+        MethodDispatchEntry entry = cache.entryFor(method);
+        try {
+            return entry.dispatch(proxy, this, normalisedArgs);
+        } catch (Throwable t) {
+            throw ExceptionClassifier.classify(t, method);
+        }
     }
 }

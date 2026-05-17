@@ -1,0 +1,155 @@
+package eu.inqudium.proxy;
+
+import eu.inqudium.core.element.InqElementType;
+import eu.inqudium.core.event.InqEventPublisher;
+import eu.inqudium.core.pipeline.InqDecorator;
+import eu.inqudium.core.pipeline.LayerTerminal;
+import eu.inqudium.pipeline.InqPipeline;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * End-to-end test of the public
+ * {@link InqPipeline#protect(Class, Object)} API. Lives in
+ * {@code inqudium-proxy}'s test sources so that
+ * {@code inqudium-proxy} is on the classpath and the
+ * {@code ProxyDelegation} reflection bridge in
+ * {@code inqudium-pipeline} resolves successfully.
+ *
+ * <p>The companion test in
+ * {@code inqudium-pipeline}'s test sources
+ * ({@code InqPipelineProtectWithoutProxyTest}) exercises the
+ * proxy-absent branch.</p>
+ */
+class EndToEndPipelineProtectTest {
+
+    public interface OrderService {
+        String greet(String name);
+
+        String throwsRuntime();
+    }
+
+    public static final class DefaultOrderService implements OrderService {
+        @Override
+        public String greet(String name) {
+            return "Hello, " + name + "!";
+        }
+
+        @Override
+        public String throwsRuntime() {
+            throw new IllegalStateException("runtime boom");
+        }
+    }
+
+    static final class FakeBulkhead implements InqDecorator<Object, Object> {
+
+        private final String name;
+
+        FakeBulkhead(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public InqElementType elementType() {
+            return InqElementType.BULKHEAD;
+        }
+
+        @Override
+        public InqEventPublisher eventPublisher() {
+            return null;
+        }
+
+        @Override
+        public Object execute(long chainId, long callId, Object argument,
+                              LayerTerminal<Object, Object> next) {
+            return next.execute(chainId, callId, argument);
+        }
+    }
+
+    @Test
+    void should_build_a_working_proxy_via_pipeline_protect() {
+        // Given
+        InqPipeline pipeline = InqPipeline.builder()
+                .shield(new FakeBulkhead("orderBh"))
+                .build();
+
+        // When
+        OrderService proxy = pipeline.protect(
+                OrderService.class, new DefaultOrderService());
+
+        // Then — proxy is functional through the reflection bridge
+        assertThat(proxy.greet("World")).isEqualTo("Hello, World!");
+    }
+
+    @Test
+    void should_construct_independent_proxies_with_distinct_stack_ids() {
+        // What is to be tested?
+        //   Two protect(...) calls produce two distinct proxies. The
+        //   ProxyDispatcher pulls a fresh stack ID per call, so the
+        //   two proxies are independent — calls on one do not affect
+        //   counters on the other.
+        // How will the test case be deemed successful and why?
+        //   Both proxies behave correctly and are not the same object
+        //   reference. Identity divergence is the simplest observable
+        //   evidence that distinct stack IDs were allocated.
+        // Why is it important to test this test case?
+        //   Pins the per-call construction contract — a regression
+        //   that cached and re-used a single proxy would break
+        //   the stable-ID assumption that introspection (3.12) relies
+        //   on.
+
+        // Given
+        InqPipeline pipeline = InqPipeline.builder()
+                .shield(new FakeBulkhead("orderBh"))
+                .build();
+
+        // When
+        OrderService firstProxy = pipeline.protect(
+                OrderService.class, new DefaultOrderService());
+        OrderService secondProxy = pipeline.protect(
+                OrderService.class, new DefaultOrderService());
+
+        // Then
+        assertThat(firstProxy).isNotSameAs(secondProxy);
+        assertThat(firstProxy.greet("A")).isEqualTo("Hello, A!");
+        assertThat(secondProxy.greet("B")).isEqualTo("Hello, B!");
+    }
+
+    @Test
+    void should_unwrap_runtime_exceptions_from_the_reflection_bridge() {
+        // What is to be tested?
+        //   When the underlying ProxyDispatcher (or the dispatched
+        //   call) throws a RuntimeException, the ProxyDelegation
+        //   reflection bridge must unwrap the
+        //   InvocationTargetException so callers see the original
+        //   exception type — not a reflective wrapper.
+        // How will the test case be deemed successful and why?
+        //   proxy.throwsRuntime() raises IllegalStateException
+        //   ("runtime boom"), not InvocationTargetException or
+        //   any wrapper around it.
+        // Why is it important to test this test case?
+        //   The reflection bridge is invisible to callers; if it
+        //   leaked InvocationTargetException, every caller would
+        //   need to write awkward unwrapping code. This pins the
+        //   "as if not reflective" promise of ProxyDelegation.
+
+        // Given
+        InqPipeline pipeline = InqPipeline.builder()
+                .shield(new FakeBulkhead("orderBh"))
+                .build();
+        OrderService proxy = pipeline.protect(
+                OrderService.class, new DefaultOrderService());
+
+        // When / Then
+        assertThatThrownBy(proxy::throwsRuntime)
+                .isExactlyInstanceOf(IllegalStateException.class)
+                .hasMessage("runtime boom");
+    }
+}

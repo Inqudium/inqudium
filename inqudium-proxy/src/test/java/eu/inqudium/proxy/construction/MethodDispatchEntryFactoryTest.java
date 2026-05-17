@@ -232,7 +232,7 @@ class MethodDispatchEntryFactoryTest {
             // dispatch the entry to confirm the layer is wired in.
             // SyncCacheEntry needs a real handler for stackId/callId.
             eu.inqudium.proxy.handler.InqInvocationHandler handler =
-                    new eu.inqudium.proxy.handler.InqInvocationHandler(1L, () -> 1L);
+                    new eu.inqudium.proxy.handler.InqInvocationHandler(1L, () -> 1L, java.util.Map.of());
             Object result = entry.dispatch(null, handler, new Object[0]);
             assertThat(result).isEqualTo("decorated");
             assertThat(bulkhead.callCount()).isEqualTo(1);

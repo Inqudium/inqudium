@@ -130,16 +130,18 @@ class ProxyBuilderTest {
             Map<Method, MethodDispatchEntry> entries = ProxyBuilder.build(
                     pipeline, SyncService.class, target);
 
-            // Then — interface declares four methods plus three Object
-            // methods (equals, hashCode, toString) come via getMethods.
-            // The evaluator and proxy walk SyncService.class.getMethods()
-            // which excludes the Object-declared trio for an interface,
-            // so the entries map should contain exactly the four
-            // service methods.
+            // Then — the interface declares four service methods. The
+            // annotation evaluator walks serviceInterface.getMethods(),
+            // which excludes Object-declared methods for an interface,
+            // so the plans map covers only those four. ProxyBuilder
+            // additionally seeds entries for equals/hashCode/toString
+            // (Object methods are still delivered to the handler by
+            // the JDK proxy) — see the Object-methods loop in build().
             assertThat(entries).isNotEmpty();
             assertThat(entries.keySet().stream().map(Method::getName))
                     .contains("simple", "decorated",
-                            "defaultUnoverridden", "defaultOverridden");
+                            "defaultUnoverridden", "defaultOverridden",
+                            "equals", "hashCode", "toString");
         }
 
         @Test
