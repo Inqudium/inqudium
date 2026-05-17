@@ -1,7 +1,7 @@
 package eu.inqudium.imperative.bulkhead.strategy;
 
 import eu.inqudium.core.element.bulkhead.algo.InqLimitAlgorithm;
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 
 import java.time.Duration;
@@ -23,7 +23,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * @since 0.3.0
  */
-public final class AdaptiveBulkheadStrategy implements BlockingBulkheadStrategy {
+public final class AdaptiveBulkheadStrategy implements TimedBulkheadStrategy {
 
     private final InqLimitAlgorithm limitAlgorithm;
     private final ReentrantLock lock = new ReentrantLock();

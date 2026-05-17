@@ -1,6 +1,6 @@
 package eu.inqudium.imperative.bulkhead.strategy;
 
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 
 import java.time.Duration;
@@ -28,7 +28,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * @since 0.3.0
  */
-public final class SemaphoreBulkheadStrategy implements BlockingBulkheadStrategy {
+public final class SemaphoreBulkheadStrategy implements TimedBulkheadStrategy {
 
     private final AdjustableSemaphore semaphore;
     private final AtomicInteger acquiredPermits;

@@ -1,7 +1,7 @@
 package eu.inqudium.imperative.lifecycle.spi;
 
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.util.concurrent.CompletionStage;
 
@@ -36,5 +36,5 @@ public interface AsyncImperativePhase<A, R> extends ImperativePhase<A, R> {
      *         except on the fast path where the downstream stage is already complete on entry.
      */
     CompletionStage<R> executeAsync(
-            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next);
+            long chainId, long callId, A argument, AsyncLayerTerminal<A, R> next);
 }

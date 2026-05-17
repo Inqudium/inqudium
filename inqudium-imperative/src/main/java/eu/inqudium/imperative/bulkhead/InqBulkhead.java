@@ -3,7 +3,7 @@ package eu.inqudium.imperative.bulkhead;
 import eu.inqudium.config.live.LiveContainer;
 import eu.inqudium.config.runtime.BulkheadHandle;
 import eu.inqudium.config.runtime.ImperativeTag;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
@@ -189,7 +189,7 @@ public final class InqBulkhead<A, R>
             case CoDelStrategyConfig ignored -> snapshot.maxConcurrentCalls();
             case AdaptiveStrategyConfig adaptive ->
                     algorithmInitialLimit(adaptive.algorithm());
-            case AdaptiveNonBlockingStrategyConfig nonBlocking ->
+            case AdaptiveInstantStrategyConfig nonBlocking ->
                     algorithmInitialLimit(nonBlocking.algorithm());
         };
     }

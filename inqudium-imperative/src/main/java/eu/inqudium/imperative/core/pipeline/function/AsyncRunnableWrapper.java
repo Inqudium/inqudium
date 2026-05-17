@@ -4,7 +4,7 @@ import eu.inqudium.core.pipeline.function.RunnableWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncBaseWrapper;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -33,7 +33,7 @@ public class AsyncRunnableWrapper
         this(name, delegate, AsyncLayerAction.passThrough());
     }
 
-    private static InternalAsyncExecutor<Void, Void> coreFor(Runnable delegate) {
+    private static AsyncLayerTerminal<Void, Void> coreFor(Runnable delegate) {
         return (chainId, callId, arg) -> {
             delegate.run();
             return CompletableFuture.completedFuture(null);

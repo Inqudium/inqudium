@@ -4,7 +4,7 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.Wrapper;
 import org.junit.jupiter.api.DisplayNameGeneration;
 import org.junit.jupiter.api.DisplayNameGenerator;
@@ -82,7 +82,7 @@ class InqProxyFactoryPipelineTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             trace.add(name + ":enter");
             try {
                 return next.execute(chainId, callId, arg);

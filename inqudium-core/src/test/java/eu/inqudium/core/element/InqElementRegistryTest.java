@@ -3,7 +3,7 @@ package eu.inqudium.core.element;
 import eu.inqudium.core.element.InqElementRegistry.InqElementNotFoundException;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -56,7 +56,7 @@ class InqElementRegistryTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             return next.execute(chainId, callId, arg);
         }
     }

@@ -2,7 +2,7 @@ package eu.inqudium.core.pipeline.function;
 
 import eu.inqudium.core.pipeline.BaseWrapper;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 
 import java.util.function.Supplier;
@@ -59,9 +59,9 @@ public class SupplierWrapper<T>
      *
      * @param delegate the real supplier to invoke at the end of the chain
      * @param <T>      the supplier's return type
-     * @return a terminal {@link InternalExecutor} that calls {@code delegate.get()}
+     * @return a terminal {@link LayerTerminal} that calls {@code delegate.get()}
      */
-    private static <T> InternalExecutor<Void, T> coreFor(Supplier<T> delegate) {
+    private static <T> LayerTerminal<Void, T> coreFor(Supplier<T> delegate) {
         return (chainId, callId, arg) -> delegate.get();
     }
 

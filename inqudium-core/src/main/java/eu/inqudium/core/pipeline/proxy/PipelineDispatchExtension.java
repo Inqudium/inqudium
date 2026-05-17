@@ -3,7 +3,7 @@ package eu.inqudium.core.pipeline.proxy;
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 
 import java.lang.reflect.Method;
@@ -30,7 +30,7 @@ import java.util.function.Function;
  * <p>At construction, every pipeline element is folded via
  * {@link InqDecorator#decorateJoinPoint} into a single chain factory. Each
  * service-method invocation builds a method-specific terminal (a
- * {@link MethodInvoker} captured in an {@link InternalExecutor} lambda),
+ * {@link MethodInvoker} captured in an {@link LayerTerminal} lambda),
  * adapts it to a {@link JoinPointExecutor}, and runs it through the cached
  * factory. The hot path is one map lookup (for the invoker), one
  * {@code factory.apply(terminal)} call, and one {@code chain.proceed()}.</p>
@@ -78,8 +78,8 @@ public class PipelineDispatchExtension implements DispatchExtension {
      * inner extension's {@link #executeChain}, effectively chaining the two
      * pipelines together without proxy re-entry.
      */
-    private final Function<InternalExecutor<Void, Object>,
-            InternalExecutor<Void, Object>> nextStepFactory;
+    private final Function<LayerTerminal<Void, Object>,
+            LayerTerminal<Void, Object>> nextStepFactory;
 
     /**
      * When non-null, overrides the target passed to {@link #dispatch} for the
@@ -246,11 +246,11 @@ public class PipelineDispatchExtension implements DispatchExtension {
      * @param method the service method to invoke
      * @param args   the method arguments
      * @param target the object to invoke the method on
-     * @return an {@link InternalExecutor} that invokes the method when executed
+     * @return an {@link LayerTerminal} that invokes the method when executed
      */
-    private InternalExecutor<Void, Object> buildTerminal(Method method,
-                                                         Object[] args,
-                                                         Object target) {
+    private LayerTerminal<Void, Object> buildTerminal(Method method,
+                                                      Object[] args,
+                                                      Object target) {
         // Resolve the pre-built, arity-specialized invoker once. The returned
         // lambda captures the invoker itself — not the raw method — so the
         // hot-path call is a direct invoker.invoke(target, args) with no
@@ -395,7 +395,7 @@ public class PipelineDispatchExtension implements DispatchExtension {
     /**
      * Executes the pipeline chain for a single invocation.
      *
-     * <p>This method bridges the {@link InternalExecutor} contract used for
+     * <p>This method bridges the {@link LayerTerminal} contract used for
      * chain-walk linking with the {@link JoinPointExecutor} contract used
      * by the pipeline fold. The flow is:</p>
      * <ol>
@@ -429,11 +429,11 @@ public class PipelineDispatchExtension implements DispatchExtension {
      * pipeline elements
      */
     Object executeChain(long chainId, long callId,
-                        InternalExecutor<Void, Object> terminal) {
+                        LayerTerminal<Void, Object> terminal) {
         // Apply the next-step factory: for linked extensions, this wraps
         // the terminal with the inner extension's executeChain(); for
         // unlinked extensions, this returns the terminal unchanged (identity).
-        InternalExecutor<Void, Object> wrappedTerminal = nextStepFactory.apply(terminal);
+        LayerTerminal<Void, Object> wrappedTerminal = nextStepFactory.apply(terminal);
 
         // Adapt the InternalExecutor terminal to a JoinPointExecutor so the
         // pipeline fold can decorate it. wrappedTerminal.execute(...) only

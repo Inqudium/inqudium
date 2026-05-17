@@ -3,6 +3,8 @@
 This document provides a high-level overview of Inqudium's internal architecture, linking to the relevant Architectural
 Decision Records (ADRs) for detailed rationale.
 
+For a topic-clustered index of every ADR in the repository, see [`adr/README.md`](adr/README.md).
+
 ## The big picture
 
 Inqudium is a multi-paradigm resilience library. It provides the same algorithms (CircuitBreaker, RateLimiter, Retry,

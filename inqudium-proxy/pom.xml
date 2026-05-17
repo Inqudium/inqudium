@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.inqudium</groupId>
+        <artifactId>inqudium-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>inqudium-proxy</artifactId>
+
+    <name>Inqudium :: Proxy</name>
+    <description>JDK dynamic-proxy integration for the Inqudium pipeline, per ADR-035.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-core</artifactId>
+            <version>${revision}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-pipeline</artifactId>
+            <version>${revision}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-annotation</artifactId>
+            <version>${revision}</version>
+            <scope>compile</scope>
+            <!--
+              Override the parent's <optional>true</optional>. The annotation module is
+              part of inqudium-proxy's visible toolchain, so downstream consumers
+              protecting annotated services need the annotations transitively.
+            -->
+            <optional>false</optional>
+        </dependency>
+        <!--
+          Optional dependency: enables the async dispatch path landing in sub-step 3.11
+          of REFACTORING_PROXY_REWRITE.md (ADR-037 §6). No class inside inqudium-proxy
+          references inqudium-imperative until then; on the sync-only loading path this
+          artefact stays off the classpath.
+        -->
+        <dependency>
+            <groupId>eu.inqudium</groupId>
+            <artifactId>inqudium-imperative</artifactId>
+            <version>${revision}</version>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -3,7 +3,7 @@ package eu.inqudium.aspect.pipeline;
 import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.lang.reflect.Method;
 import java.util.Comparator;
@@ -47,8 +47,8 @@ public final class AsyncResolvedPipeline {
      * and returns the fully composed chain that traverses all layers before
      * reaching the terminal.
      */
-    private final Function<InternalAsyncExecutor<Void, Object>,
-            InternalAsyncExecutor<Void, Object>> chainFactory;
+    private final Function<AsyncLayerTerminal<Void, Object>,
+            AsyncLayerTerminal<Void, Object>> chainFactory;
 
     /**
      * Per-instance state — chain ID, call-ID source, and layer names.
@@ -60,8 +60,8 @@ public final class AsyncResolvedPipeline {
     // ======================== Construction ========================
 
     private AsyncResolvedPipeline(
-            Function<InternalAsyncExecutor<Void, Object>,
-                    InternalAsyncExecutor<Void, Object>> chainFactory,
+            Function<AsyncLayerTerminal<Void, Object>,
+                    AsyncLayerTerminal<Void, Object>> chainFactory,
             ResolvedPipelineState state) {
         this.chainFactory = chainFactory;
         this.state = state;
@@ -137,19 +137,19 @@ public final class AsyncResolvedPipeline {
     /**
      * Composes the chain factory inside-out from the sorted list of async actions.
      */
-    private static Function<InternalAsyncExecutor<Void, Object>,
-            InternalAsyncExecutor<Void, Object>> composeFactory(
+    private static Function<AsyncLayerTerminal<Void, Object>,
+            AsyncLayerTerminal<Void, Object>> composeFactory(
             List<AsyncLayerAction<Void, Object>> actions) {
-        Function<InternalAsyncExecutor<Void, Object>,
-                InternalAsyncExecutor<Void, Object>> factory = Function.identity();
+        Function<AsyncLayerTerminal<Void, Object>,
+                AsyncLayerTerminal<Void, Object>> factory = Function.identity();
 
         for (int i = actions.size() - 1; i >= 0; i--) {
             AsyncLayerAction<Void, Object> action = actions.get(i);
-            Function<InternalAsyncExecutor<Void, Object>,
-                    InternalAsyncExecutor<Void, Object>> outer = factory;
+            Function<AsyncLayerTerminal<Void, Object>,
+                    AsyncLayerTerminal<Void, Object>> outer = factory;
 
             factory = terminal -> {
-                InternalAsyncExecutor<Void, Object> next = outer.apply(terminal);
+                AsyncLayerTerminal<Void, Object> next = outer.apply(terminal);
                 return (chainId, callId, arg) ->
                         action.executeAsync(chainId, callId, arg, next);
             };
@@ -198,7 +198,7 @@ public final class AsyncResolvedPipeline {
         // Terminal: invokes the typed executor and bridges into the async chain.
         // The CompletionStage return type is enforced by the method signature —
         // no runtime instanceof check needed.
-        InternalAsyncExecutor<Void, Object> terminal = (c, ca, arg) -> {
+        AsyncLayerTerminal<Void, Object> terminal = (c, ca, arg) -> {
             try {
                 return coreExecutor.proceed();
             } catch (RuntimeException | Error e) {

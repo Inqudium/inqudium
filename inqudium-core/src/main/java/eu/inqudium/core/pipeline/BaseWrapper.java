@@ -33,7 +33,7 @@ import eu.inqudium.core.pipeline.function.SupplierWrapper;
  */
 public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
         extends AbstractBaseWrapper<T, S>
-        implements InternalExecutor<A, R> {
+        implements LayerTerminal<A, R> {
 
     /**
      * Reference to the next step in the chain. This is either:
@@ -47,7 +47,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
      * <p>Pre-resolved at construction time to avoid runtime {@code instanceof}
      * checks on the hot path.</p>
      */
-    private final InternalExecutor<A, R> nextStep;
+    private final LayerTerminal<A, R> nextStep;
 
     /**
      * The around-advice for this layer. Receives the chain ID, call ID, argument,
@@ -72,7 +72,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
      */
     @SuppressWarnings("unchecked")
     protected BaseWrapper(String name, T delegate,
-                          InternalExecutor<A, R> coreExecution,
+                          LayerTerminal<A, R> coreExecution,
                           LayerAction<A, R> layerAction) {
         super(name, delegate);
         this.layerAction = layerAction;
@@ -81,7 +81,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
         // directly; otherwise use the terminal core execution lambda.
         // The unchecked cast is safe because wrapper chains are homogeneous —
         // all layers share the same A and R type parameters.
-        this.nextStep = isDelegateWrapper() ? (InternalExecutor<A, R>) delegate : coreExecution;
+        this.nextStep = isDelegateWrapper() ? (LayerTerminal<A, R>) delegate : coreExecution;
     }
 
     /**
@@ -95,7 +95,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
      * @param delegate      the wrapped target
      * @param coreExecution the terminal execution lambda
      */
-    protected BaseWrapper(String name, T delegate, InternalExecutor<A, R> coreExecution) {
+    protected BaseWrapper(String name, T delegate, LayerTerminal<A, R> coreExecution) {
         this(name, delegate, coreExecution, LayerAction.passThrough());
     }
 
@@ -108,7 +108,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
      * @param coreExecution the terminal execution lambda
      */
     protected BaseWrapper(InqDecorator<A, R> decorator, T delegate,
-                          InternalExecutor<A, R> coreExecution) {
+                          LayerTerminal<A, R> coreExecution) {
         this(newLayerDesc(decorator), delegate, coreExecution, decorator);
     }
 
@@ -132,7 +132,7 @@ public abstract class BaseWrapper<T, A, R, S extends BaseWrapper<T, A, R, S>>
     /**
      * Executes this layer's around-advice, passing the next step reference.
      *
-     * <p>This method is both the {@link InternalExecutor} implementation
+     * <p>This method is both the {@link LayerTerminal} implementation
      * (called by the outer layer's {@code LayerAction} via {@code next.execute(...)})
      * and the internal dispatch mechanism. The {@code layerAction} receives
      * {@link #nextStep} and decides when/whether to invoke it.</p>

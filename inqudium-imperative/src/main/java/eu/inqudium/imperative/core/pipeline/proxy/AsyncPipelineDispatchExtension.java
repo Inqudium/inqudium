@@ -8,7 +8,7 @@ import eu.inqudium.core.pipeline.proxy.MethodHandleCache;
 import eu.inqudium.core.pipeline.proxy.MethodInvoker;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -40,7 +40,7 @@ import java.util.function.Function;
  * <p>At construction, every pipeline element is folded via
  * {@link InqAsyncDecorator#decorateAsyncJoinPoint} into a single async chain
  * factory. Each service-method invocation builds a method-specific terminal
- * (a {@link MethodInvoker} captured in an {@link InternalAsyncExecutor} lambda),
+ * (a {@link MethodInvoker} captured in an {@link AsyncLayerTerminal} lambda),
  * adapts it to a {@link JoinPointExecutor}, and runs it through the cached
  * factory. Synchronous failures during chain composition or terminal invocation
  * are lifted into a failed {@link CompletionStage} so the caller's error
@@ -88,8 +88,8 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
      * inner extension's {@link #executeChain}, effectively chaining the two
      * pipelines together without proxy re-entry.
      */
-    private final Function<InternalAsyncExecutor<Void, Object>,
-            InternalAsyncExecutor<Void, Object>> nextStepFactory;
+    private final Function<AsyncLayerTerminal<Void, Object>,
+            AsyncLayerTerminal<Void, Object>> nextStepFactory;
 
     /**
      * When non-null, overrides the target passed to {@link #dispatch} for the
@@ -256,13 +256,13 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
      * @param method the service method to invoke
      * @param args   the method arguments
      * @param target the object to invoke the method on
-     * @return an {@link InternalAsyncExecutor} that invokes the method when
+     * @return an {@link AsyncLayerTerminal} that invokes the method when
      * executed
      */
     @SuppressWarnings("unchecked")
-    private InternalAsyncExecutor<Void, Object> buildTerminal(Method method,
-                                                              Object[] args,
-                                                              Object target) {
+    private AsyncLayerTerminal<Void, Object> buildTerminal(Method method,
+                                                           Object[] args,
+                                                           Object target) {
         // Resolve the pre-built, arity-specialized invoker once. The returned
         // lambda captures the invoker itself — not the raw method — so the
         // hot-path call is a direct invoker.invoke(target, args) with no
@@ -433,7 +433,7 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
     /**
      * Executes the async pipeline chain for a single invocation.
      *
-     * <p>This method bridges the {@link InternalAsyncExecutor} contract used
+     * <p>This method bridges the {@link AsyncLayerTerminal} contract used
      * for chain-walk linking with the {@link JoinPointExecutor} contract used
      * by the pipeline fold. The flow is:</p>
      * <ol>
@@ -462,11 +462,11 @@ public class AsyncPipelineDispatchExtension implements DispatchExtension {
      * chain, or a failed stage if anything threw synchronously
      */
     CompletionStage<Object> executeChain(long chainId, long callId,
-                                         InternalAsyncExecutor<Void, Object> terminal) {
+                                         AsyncLayerTerminal<Void, Object> terminal) {
         // Apply the next-step factory: for linked extensions, this wraps the
         // terminal with the inner extension's executeChain(); for unlinked
         // extensions, this returns the terminal unchanged (identity).
-        InternalAsyncExecutor<Void, Object> wrappedTerminal = nextStepFactory.apply(terminal);
+        AsyncLayerTerminal<Void, Object> wrappedTerminal = nextStepFactory.apply(terminal);
 
         // Adapt the InternalAsyncExecutor terminal to a JoinPointExecutor so
         // the pipeline fold can decorate it.

@@ -2,7 +2,7 @@ package eu.inqudium.core.pipeline.function;
 
 import eu.inqudium.core.pipeline.BaseWrapper;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 
 /**
@@ -78,9 +78,9 @@ public class RunnableWrapper
      * {@code Runnable} has no return value (the chain uses {@code Void}).</p>
      *
      * @param delegate the real runnable to invoke at the end of the chain
-     * @return a terminal {@link InternalExecutor} that calls {@code delegate.run()}
+     * @return a terminal {@link LayerTerminal} that calls {@code delegate.run()}
      */
-    private static InternalExecutor<Void, Void> coreFor(Runnable delegate) {
+    private static LayerTerminal<Void, Void> coreFor(Runnable delegate) {
         return (chainId, callId, arg) -> {
             delegate.run();
             return null; // Void return type — no value to propagate back

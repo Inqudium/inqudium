@@ -22,7 +22,7 @@ public enum RejectionReason {
     /**
      * A permit was not available within the caller's specified timeout.
      *
-     * <p>Only applies to {@link BlockingBulkheadStrategy} implementations. The caller
+     * <p>Only applies to {@link TimedBulkheadStrategy} implementations. The caller
      * was willing to wait, but the bulkhead did not free a permit in time.
      */
     TIMEOUT_EXPIRED,

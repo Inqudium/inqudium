@@ -1,6 +1,6 @@
 package eu.inqudium.imperative.bulkhead;
 
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
@@ -13,7 +13,7 @@ import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
 import eu.inqudium.core.element.bulkhead.algo.AimdLimitAlgorithm;
 import eu.inqudium.core.element.bulkhead.algo.InqLimitAlgorithm;
 import eu.inqudium.core.element.bulkhead.algo.VegasLimitAlgorithm;
-import eu.inqudium.core.element.bulkhead.strategy.AdaptiveNonBlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.AdaptiveInstantBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.AdaptiveBulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.CoDelBulkheadStrategy;
@@ -75,8 +75,8 @@ final class BulkheadStrategyFactory {
             case AdaptiveStrategyConfig adaptive ->
                     new AdaptiveBulkheadStrategy(
                             buildAlgorithm(adaptive.algorithm(), nanoTimeSource));
-            case AdaptiveNonBlockingStrategyConfig nonBlocking ->
-                    new AdaptiveNonBlockingBulkheadStrategy(
+            case AdaptiveInstantStrategyConfig nonBlocking ->
+                    new AdaptiveInstantBulkheadStrategy(
                             buildAlgorithm(nonBlocking.algorithm(), nanoTimeSource));
         };
     }

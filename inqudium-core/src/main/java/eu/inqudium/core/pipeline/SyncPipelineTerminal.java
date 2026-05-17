@@ -22,7 +22,7 @@ import java.util.function.Supplier;
  * invocation — notably AspectJ's {@code pjp::proceed}. The pipeline's layer
  * actions are extracted <strong>once at construction</strong> into a flat
  * array; per invocation the chain is composed via a single loop producing
- * {@code N+1} escape-analysable {@link InternalExecutor} lambdas. No wrapper
+ * {@code N+1} escape-analysable {@link LayerTerminal} lambdas. No wrapper
  * objects, no {@code instanceof} checks, no {@code Function.apply} cascade.</p>
  *
  * <h3>Reusable chain: {@link #decorateJoinPoint(JoinPointExecutor)}</h3>
@@ -169,7 +169,7 @@ public final class SyncPipelineTerminal {
      * Executes the given executor through the cached layer-action chain.
      *
      * <p>Per-call cost: one {@link java.util.concurrent.atomic.AtomicLong}
-     * CAS for the call ID, one {@link InternalExecutor} terminal lambda
+     * CAS for the call ID, one {@link LayerTerminal} terminal lambda
      * binding the executor, {@code N} wrapper lambdas composed in a tight
      * loop, and a single {@link CompletionException}-unwrapping try/catch at
      * the boundary. The wrapper lambdas capture at most two references each
@@ -194,7 +194,7 @@ public final class SyncPipelineTerminal {
 
         // Terminal: invokes the executor and wraps checked exceptions for
         // transport through the chain's unchecked-only layer actions.
-        InternalExecutor<Void, R> current = (c, ca, a) -> {
+        LayerTerminal<Void, R> current = (c, ca, a) -> {
             try {
                 return executor.proceed();
             } catch (Throwable t) {
@@ -208,7 +208,7 @@ public final class SyncPipelineTerminal {
         LayerAction<Void, Object>[] acts = actions;
         for (int i = acts.length - 1; i >= 0; i--) {
             LayerAction<Void, R> action = (LayerAction<Void, R>) (LayerAction<?, ?>) acts[i];
-            InternalExecutor<Void, R> next = current;
+            LayerTerminal<Void, R> next = current;
             current = (c, ca, a) -> action.execute(c, ca, a, next);
         }
 

@@ -1,7 +1,7 @@
 package eu.inqudium.imperative.bulkhead;
 
 import eu.inqudium.config.dsl.GeneralSnapshotBuilder;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadEventConfig;
@@ -12,7 +12,7 @@ import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.LimitAlgorithm;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
-import eu.inqudium.core.element.bulkhead.strategy.AdaptiveNonBlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.AdaptiveInstantBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.BulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.AdaptiveBulkheadStrategy;
 import eu.inqudium.imperative.bulkhead.strategy.CoDelBulkheadStrategy;
@@ -102,10 +102,10 @@ class BulkheadStrategyFactoryTest {
                     Duration.ofSeconds(1), 0.05, true, 0.5);
 
             BulkheadStrategy result = BulkheadStrategyFactory.create(
-                    snapshotWith(new AdaptiveNonBlockingStrategyConfig(aimd)),
+                    snapshotWith(new AdaptiveInstantStrategyConfig(aimd)),
                     defaultGeneral());
 
-            assertThat(result).isInstanceOf(AdaptiveNonBlockingBulkheadStrategy.class);
+            assertThat(result).isInstanceOf(AdaptiveInstantBulkheadStrategy.class);
         }
 
         @Test
@@ -116,10 +116,10 @@ class BulkheadStrategyFactoryTest {
                     0.05, 0.5);
 
             BulkheadStrategy result = BulkheadStrategyFactory.create(
-                    snapshotWith(new AdaptiveNonBlockingStrategyConfig(vegas)),
+                    snapshotWith(new AdaptiveInstantStrategyConfig(vegas)),
                     defaultGeneral());
 
-            assertThat(result).isInstanceOf(AdaptiveNonBlockingBulkheadStrategy.class);
+            assertThat(result).isInstanceOf(AdaptiveInstantBulkheadStrategy.class);
         }
     }
 

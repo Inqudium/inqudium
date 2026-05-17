@@ -11,7 +11,7 @@ import eu.inqudium.config.snapshot.BulkheadEventConfig;
 import eu.inqudium.config.snapshot.BulkheadSnapshot;
 import eu.inqudium.config.validation.ApplyOutcome;
 import eu.inqudium.config.validation.BuildReport;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -326,7 +326,7 @@ class RuntimeUpdateTest {
                 @SuppressWarnings("unchecked")
                 InqBulkhead<String, String> bh =
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
-                InternalExecutor<String, String> identity =
+                LayerTerminal<String, String> identity =
                         (chainId, callId, argument) -> argument;
                 bh.execute(1L, 1L, "warm", identity);
                 assertThat(bh.lifecycleState()).isEqualTo(LifecycleState.HOT);
@@ -370,7 +370,7 @@ class RuntimeUpdateTest {
                 @SuppressWarnings("unchecked")
                 InqBulkhead<String, String> bhB =
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("b");
-                InternalExecutor<String, String> identity =
+                LayerTerminal<String, String> identity =
                         (chainId, callId, argument) -> argument;
                 bhA.execute(1L, 1L, "warm", identity);
                 bhB.execute(1L, 1L, "warm", identity);
@@ -425,7 +425,7 @@ class RuntimeUpdateTest {
                 @SuppressWarnings("unchecked")
                 InqBulkhead<String, String> bh =
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
-                InternalExecutor<String, String> identity =
+                LayerTerminal<String, String> identity =
                         (chainId, callId, argument) -> argument;
                 bh.execute(1L, 1L, "warm", identity);
                 assertThat(bh.lifecycleState()).isEqualTo(LifecycleState.HOT);

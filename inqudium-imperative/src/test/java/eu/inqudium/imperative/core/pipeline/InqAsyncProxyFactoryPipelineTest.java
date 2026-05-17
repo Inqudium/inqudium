@@ -4,7 +4,7 @@ import eu.inqudium.core.element.InqElementType;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.Wrapper;
 import eu.inqudium.core.pipeline.proxy.DispatchExtension;
 import eu.inqudium.core.pipeline.proxy.PipelineDispatchExtension;
@@ -114,7 +114,7 @@ class InqAsyncProxyFactoryPipelineTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             trace.add(name + ":sync:enter");
             try {
                 return next.execute(chainId, callId, arg);
@@ -125,7 +125,7 @@ class InqAsyncProxyFactoryPipelineTest {
 
         @Override
         public CompletionStage<Object> executeAsync(long chainId, long callId, Void arg,
-                                                    InternalAsyncExecutor<Void, Object> next) {
+                                                    AsyncLayerTerminal<Void, Object> next) {
             trace.add(name + ":async:enter");
             return next.executeAsync(chainId, callId, arg)
                     .whenComplete((r, e) -> trace.add(name + ":async:exit"));

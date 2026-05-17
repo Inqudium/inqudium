@@ -83,7 +83,7 @@ class InqPipelineEndToEndTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             if (!semaphore.tryAcquire()) {
                 trace.add("BH:reject");
                 throw new RuntimeException("INQ-BH-001: Bulkhead '" + name + "' is full");
@@ -147,7 +147,7 @@ class InqPipelineEndToEndTest {
 
         @Override
         public Object execute(long chainId, long callId, Void arg,
-                              InternalExecutor<Void, Object> next) {
+                              LayerTerminal<Void, Object> next) {
             if (state == State.OPEN) {
                 trace.add("CB:reject");
                 throw new RuntimeException("INQ-CB-001: CircuitBreaker '" + name + "' is OPEN");

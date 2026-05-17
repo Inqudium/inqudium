@@ -164,5 +164,5 @@ public interface BulkheadBuilder<P extends ParadigmTag> {
      * @param configurer the adaptive-non-blocking sub-builder lambda; non-null.
      * @return this builder, for chaining.
      */
-    BulkheadBuilder<P> adaptiveNonBlocking(Consumer<AdaptiveNonBlockingConfigBuilder> configurer);
+    BulkheadBuilder<P> adaptiveNonBlocking(Consumer<AdaptiveInstantStrategyConfigBuilder> configurer);
 }

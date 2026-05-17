@@ -4,7 +4,7 @@ import eu.inqudium.core.pipeline.proxy.DispatchExtension;
 import eu.inqudium.core.pipeline.proxy.MethodHandleCache;
 import eu.inqudium.core.pipeline.proxy.MethodInvoker;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletionStage;
@@ -30,8 +30,8 @@ public class AsyncDispatchExtension implements DispatchExtension {
 
     private final AsyncLayerAction<Void, Object> action;
 
-    private final Function<InternalAsyncExecutor<Void, Object>,
-            InternalAsyncExecutor<Void, Object>> nextStepFactory;
+    private final Function<AsyncLayerTerminal<Void, Object>,
+            AsyncLayerTerminal<Void, Object>> nextStepFactory;
 
     /**
      * When non-null, overrides the target passed to {@link #dispatch} for
@@ -96,8 +96,8 @@ public class AsyncDispatchExtension implements DispatchExtension {
      * by {@link #canHandle}).</p>
      */
     @SuppressWarnings("unchecked")
-    private InternalAsyncExecutor<Void, Object> buildTerminal(Method method, Object[] args,
-                                                              Object target) {
+    private AsyncLayerTerminal<Void, Object> buildTerminal(Method method, Object[] args,
+                                                           Object target) {
         // Resolve the per-method invoker once — the lambda below captures the
         // invoker itself. No per-call map lookup, no per-call arity switch.
         MethodInvoker invoker = handleCache.resolveInvoker(method);
@@ -156,7 +156,7 @@ public class AsyncDispatchExtension implements DispatchExtension {
     // ======================== Internal ========================
 
     CompletionStage<Object> executeChain(long chainId, long callId,
-                                         InternalAsyncExecutor<Void, Object> terminal) {
+                                         AsyncLayerTerminal<Void, Object> terminal) {
         return action.executeAsync(chainId, callId, null, nextStepFactory.apply(terminal));
     }
 }

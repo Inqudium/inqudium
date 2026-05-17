@@ -226,7 +226,7 @@ public final class AimdAlgorithmBuilder {
 
     /**
      * Materialize the algorithm config from the current builder state. Called by the parent
-     * {@link AdaptiveConfigBuilder} or {@link AdaptiveNonBlockingConfigBuilder}; user code
+     * {@link AdaptiveConfigBuilder} or {@link AdaptiveInstantStrategyConfigBuilder}; user code
      * does not call this method directly.
      *
      * @return the AIMD algorithm config; defaults match the {@code balanced} preset.

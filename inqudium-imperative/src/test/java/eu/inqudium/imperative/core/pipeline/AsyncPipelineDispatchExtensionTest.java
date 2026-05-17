@@ -97,7 +97,7 @@ class AsyncPipelineDispatchExtensionTest {
 
         @Override
         public CompletionStage<Object> executeAsync(long chainId, long callId, Void arg,
-                                                    InternalAsyncExecutor<Void, Object> next) {
+                                                    AsyncLayerTerminal<Void, Object> next) {
             trace.add(name + ":enter");
             return next.executeAsync(chainId, callId, arg)
                     .whenComplete((r, e) -> trace.add(name + ":exit"));

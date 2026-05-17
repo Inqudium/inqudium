@@ -23,7 +23,7 @@ enum PassThrough implements LayerAction<Object, Object> {
      * this is a true no-op layer.
      */
     @Override
-    public Object execute(long chainId, long callId, Object argument, InternalExecutor<Object, Object> next) {
+    public Object execute(long chainId, long callId, Object argument, LayerTerminal<Object, Object> next) {
         return next.execute(chainId, callId, argument);
     }
 }
@@ -124,5 +124,5 @@ public interface LayerAction<A, R> {
      * @param next     the next step in the chain — call {@code next.execute(...)} to proceed
      * @return the result, either from the next step or produced/modified by this layer
      */
-    R execute(long chainId, long callId, A argument, InternalExecutor<A, R> next);
+    R execute(long chainId, long callId, A argument, LayerTerminal<A, R> next);
 }

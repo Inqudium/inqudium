@@ -17,27 +17,27 @@ import java.util.concurrent.CompletionStage;
  */
 public abstract class AsyncBaseWrapper<T, A, R, S extends AsyncBaseWrapper<T, A, R, S>>
         extends AbstractBaseWrapper<T, S>
-        implements InternalAsyncExecutor<A, R> {
+        implements AsyncLayerTerminal<A, R> {
 
-    private final InternalAsyncExecutor<A, R> nextStep;
+    private final AsyncLayerTerminal<A, R> nextStep;
     private final AsyncLayerAction<A, R> layerAction;
 
     @SuppressWarnings("unchecked")
     protected AsyncBaseWrapper(String name, T delegate,
-                               InternalAsyncExecutor<A, R> coreExecution,
+                               AsyncLayerTerminal<A, R> coreExecution,
                                AsyncLayerAction<A, R> layerAction) {
         super(name, delegate);
         this.layerAction = layerAction;
-        this.nextStep = isDelegateWrapper() ? (InternalAsyncExecutor<A, R>) delegate : coreExecution;
+        this.nextStep = isDelegateWrapper() ? (AsyncLayerTerminal<A, R>) delegate : coreExecution;
     }
 
     protected AsyncBaseWrapper(String name, T delegate,
-                               InternalAsyncExecutor<A, R> coreExecution) {
+                               AsyncLayerTerminal<A, R> coreExecution) {
         this(name, delegate, coreExecution, AsyncLayerAction.passThrough());
     }
 
     protected AsyncBaseWrapper(InqAsyncDecorator<A, R> decorator, T delegate,
-                               InternalAsyncExecutor<A, R> coreExecution) {
+                               AsyncLayerTerminal<A, R> coreExecution) {
         this(newLayerDesc(decorator), delegate, coreExecution, decorator);
     }
 

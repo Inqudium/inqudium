@@ -2,7 +2,7 @@ package eu.inqudium.imperative.bulkhead;
 
 import eu.inqudium.config.dsl.GeneralSnapshotBuilder;
 import eu.inqudium.config.live.LiveContainer;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.BulkheadEventConfig;
@@ -14,7 +14,7 @@ import eu.inqudium.config.snapshot.GeneralSnapshot;
 import eu.inqudium.config.snapshot.LimitAlgorithm;
 import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("BulkheadHotPhase strategy materialization")
 class BulkheadHotPhaseStrategyMaterializationTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static GeneralSnapshot defaultGeneral() {
@@ -132,7 +132,7 @@ class BulkheadHotPhaseStrategyMaterializationTest {
                     5, 1, 100, 0.9,
                     Duration.ofSeconds(1), 0.05, true, 0.0);
 
-            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveNonBlockingStrategyConfig(aimd));
+            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveInstantStrategyConfig(aimd));
 
             String result = bh.execute(1L, 1L, "x", IDENTITY);
 
@@ -147,7 +147,7 @@ class BulkheadHotPhaseStrategyMaterializationTest {
                     Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(3),
                     0.05, 0.0);
 
-            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveNonBlockingStrategyConfig(vegas));
+            InqBulkhead<String, String> bh = newBulkhead(new AdaptiveInstantStrategyConfig(vegas));
 
             String result = bh.execute(1L, 1L, "x", IDENTITY);
 

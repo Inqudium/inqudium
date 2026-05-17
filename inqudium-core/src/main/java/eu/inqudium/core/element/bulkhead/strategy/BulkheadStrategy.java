@@ -11,9 +11,9 @@ import java.time.Duration;
  * <p>The permit acquisition method is deliberately absent from this interface
  * because its signature differs fundamentally between paradigms:
  * <ul>
- *   <li>{@link BlockingBulkheadStrategy#tryAcquire(Duration)} — may park the
+ *   <li>{@link TimedBulkheadStrategy#tryAcquire(Duration)} — may park the
  *       calling thread for the given timeout; throws {@link InterruptedException}</li>
- *   <li>{@link NonBlockingBulkheadStrategy#tryAcquire()} — immediate yes/no decision;
+ *   <li>{@link InstantBulkheadStrategy#tryAcquire()} — immediate yes/no decision;
  *       never blocks, never throws</li>
  * </ul>
  *
@@ -21,8 +21,8 @@ import java.time.Duration;
  * <p>All implementations must be thread-safe. The facade calls {@link #release()}
  * and {@link #onCallComplete} from arbitrary threads concurrently.
  *
- * @see BlockingBulkheadStrategy
- * @see NonBlockingBulkheadStrategy
+ * @see TimedBulkheadStrategy
+ * @see InstantBulkheadStrategy
  * @since 0.3.0
  */
 public interface BulkheadStrategy {

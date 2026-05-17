@@ -2,8 +2,13 @@
 
 **Status:** Accepted
 **Date:** 2026-04-26
+**Last updated:** 2026-05-14
 **Deciders:** Core team
-**Related:** ADR-025 (configuration architecture), ADR-026 (runtime and registry), ADR-028 (update propagation and component lifecycle)
+**Related:** ADR-025 (configuration architecture), ADR-026 (runtime and registry),
+ADR-028 (component lifecycle contract — the behaviour this ADR implements),
+ADR-042 (pipeline contracts — declares `LayerTerminal` / `AsyncLayerTerminal` used in `execute(...)` signatures),
+ADR-043 (update propagation and veto negotiation — uses the listener and internal-check contracts that
+the base classes specified here expose).
 
 ## Context
 
@@ -34,7 +39,7 @@ The pattern needs to satisfy several constraints simultaneously:
    would deny the hot phase access to the live snapshot at the moment of transition.
 
 3. **The transition runs exactly once and is observable.** Application code must be able to query
-   `lifecycleState()` at any time. The transition itself fires a `ComponentBecameHotEvent` (per ADR-028)
+   `lifecycleState()` at any time. The transition itself fires a `ComponentBecameHotEvent` (per ADR-043)
    exactly once per component lifetime.
 
 4. **The hot path is free of lifecycle checks.** Once the component is hot, every subsequent `execute` call
@@ -84,12 +89,12 @@ answer is no, and the reason is execute-signature divergence.
 
 The imperative form returns a value directly:
 ```java
-Object execute(long chainId, long callId, Object argument, InternalExecutor next);
+Object execute(long stackId, long callId, Object argument, LayerTerminal next);
 ```
 
 The reactive form returns a publisher:
 ```java
-Mono<Object> execute(long chainId, long callId, Object argument, ReactiveExecutor next);
+Mono<Object> execute(long stackId, long callId, Object argument, ReactiveExecutor next);
 ```
 
 The RxJava3 form returns an `Observable` or `Single` with subtly different subscription semantics. The
@@ -165,12 +170,12 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
 
     // The execute entry point. Delegates to whichever phase is current.
     public final Object execute(
-            long chainId, long callId, Object argument, InternalExecutor next) {
-        return phase.get().execute(chainId, callId, argument, next);
+            long stackId, long callId, Object argument, LayerTerminal next) {
+        return phase.get().execute(stackId, callId, argument, next);
     }
 
     // Listener registration is paradigm-agnostic but lives here because the base class
-    // owns the listener list. Phases consult it during update dispatch (see ADR-028).
+    // owns the listener list. Phases consult it during update dispatch (see ADR-043).
     public final AutoCloseable onChangeRequest(ChangeRequestListener<S> listener) {
         listeners.add(listener);
         return () -> listeners.remove(listener);
@@ -186,7 +191,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
 
     // The phase contract internal to this base class.
     interface ImperativePhase {
-        Object execute(long chainId, long callId, Object argument, InternalExecutor next);
+        Object execute(long stackId, long callId, Object argument, LayerTerminal next);
     }
 
     // Marker interface so the base class can detect hot phases without subtype coupling.
@@ -196,7 +201,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
     // component's phase field. Its only job is to swap itself out for the hot phase.
     private final class ColdPhase implements ImperativePhase {
         @Override
-        public Object execute(long chainId, long callId, Object argument, InternalExecutor next) {
+        public Object execute(long stackId, long callId, Object argument, LayerTerminal next) {
             ImperativePhase hot = createHotPhase();
             // CAS: only one thread succeeds; the rest discard their hot phase candidate
             // and use whichever hot phase won. The discarded candidates have not yet
@@ -205,7 +210,7 @@ public abstract class ImperativeLifecyclePhasedComponent<S extends ComponentSnap
             if (phase.compareAndSet(this, hot)) {
                 eventPublisher.publish(new ComponentBecameHotEvent(name));
             }
-            return phase.get().execute(chainId, callId, argument, next);
+            return phase.get().execute(stackId, callId, argument, next);
         }
     }
 }
@@ -230,7 +235,7 @@ Hot phases that support the async pipeline contract additionally implement
 ```java
 public interface AsyncImperativePhase<A, R> extends ImperativePhase<A, R> {
     CompletionStage<R> executeAsync(
-            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next);
+            long stackId, long callId, A argument, AsyncLayerTerminal<A, R> next);
 }
 ```
 
@@ -329,14 +334,14 @@ final class BulkheadHotPhase<A, R>
     }
 
     @Override
-    public R execute(long chainId, long callId, A argument, InternalExecutor<A, R> next) {
+    public R execute(long stackId, long callId, A argument, LayerTerminal<A, R> next) {
         // tryAcquire returns null on a granted permit, a RejectionContext on rejection.
         RejectionContext rejection = tryAcquire(component.snapshot().maxWaitDuration());
         if (rejection != null) {
-            throw new InqBulkheadFullException(chainId, callId, component.name(), rejection, ...);
+            throw new InqBulkheadFullException(stackId, callId, component.name(), rejection, ...);
         }
         try {
-            return next.execute(chainId, callId, argument);
+            return next.execute(stackId, callId, argument);
         } finally {
             strategy.release();
         }
@@ -344,7 +349,7 @@ final class BulkheadHotPhase<A, R>
 
     @Override
     public CompletionStage<R> executeAsync(
-            long chainId, long callId, A argument, InternalAsyncExecutor<A, R> next) {
+            long stackId, long callId, A argument, AsyncLayerTerminal<A, R> next) {
         // Acquire synchronously (back-pressure visible to the caller), release on stage
         // completion via whenComplete (ADR-023 — return the decorated copy, fast-path the
         // already-completed case). Full body in the imperative module.
@@ -452,18 +457,18 @@ keep each paradigm's implementation idiomatic for that paradigm.
 ### Lifecycle of the hot phase under updates
 
 Once the component is hot, snapshot updates from `runtime.update(...)` are routed through the veto chain
-(ADR-028) and, when accepted, applied to the `LiveContainer`. The hot phase's snapshot subscriber sees the
+(ADR-043) and, when accepted, applied to the `LiveContainer`. The hot phase's snapshot subscriber sees the
 new snapshot and adapts. *Adaptation* may mean:
 
 - Adjusting strategy parameters in place (e.g., changing a semaphore's permit count).
 - Replacing the strategy entirely (e.g., switching from semaphore to CoDel — only legal if the strategy's
-  internal-mutability check accepts; see ADR-028).
+  internal-mutability check accepts; see ADR-043).
 - Restarting subscriptions or re-scheduling tasks.
 
 The hot phase is responsible for adaptation logic. The base class does not participate beyond delivering
 the new snapshot. Adaptation that fails (e.g., a strategy hot-swap discovers in-flight calls it cannot drain)
 must be detected by the component-internal mutability check *before* the snapshot is committed, not after —
-this is the contract from ADR-028.
+this is the contract from ADR-043.
 
 The hot phase is not replaced on update. The same `BulkheadHotPhase` instance lives for the entire hot
 period of the component; only its internal state evolves. This keeps subscriber identity stable for any

@@ -1,6 +1,6 @@
 package eu.inqudium.core.pipeline.proxy;
 
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 
 import java.lang.invoke.MethodHandle;
@@ -18,7 +18,7 @@ import java.util.function.Function;
  *
  * <h3>Dispatch flow</h3>
  * <p>Each service method call is routed through the configured {@link LayerAction}
- * with around-semantics. The action receives a terminal {@link InternalExecutor}
+ * with around-semantics. The action receives a terminal {@link LayerTerminal}
  * lambda that invokes the method on the target via a cached {@link MethodHandle}.
  * The action decides when and whether to invoke the terminal step.</p>
  *
@@ -56,8 +56,8 @@ public class SyncDispatchExtension implements DispatchExtension {
      * terminal with a lambda that calls the inner extension's {@code executeChain()},
      * effectively chaining the two actions together.
      */
-    private final Function<InternalExecutor<Void, Object>,
-            InternalExecutor<Void, Object>> nextStepFactory;
+    private final Function<LayerTerminal<Void, Object>,
+            LayerTerminal<Void, Object>> nextStepFactory;
 
     /**
      * When non-null, overrides the target passed to {@link #dispatch} for the
@@ -172,11 +172,11 @@ public class SyncDispatchExtension implements DispatchExtension {
      * @param method the service method to invoke
      * @param args   the method arguments
      * @param target the object to invoke the method on
-     * @return an {@link InternalExecutor} that invokes the method when executed
+     * @return an {@link LayerTerminal} that invokes the method when executed
      */
-    private InternalExecutor<Void, Object> buildTerminal(Method method,
-                                                         Object[] args,
-                                                         Object target) {
+    private LayerTerminal<Void, Object> buildTerminal(Method method,
+                                                      Object[] args,
+                                                      Object target) {
         // Resolve the pre-built, arity-specialized invoker once. The returned
         // lambda captures the invoker itself — not the raw method — so the
         // hot-path call is a direct invoker.invoke(target, args) with no
@@ -294,7 +294,7 @@ public class SyncDispatchExtension implements DispatchExtension {
      * @param terminal the terminal executor that invokes the actual method
      * @return the method's return value, potentially modified by the action
      */
-    Object executeChain(long chainId, long callId, InternalExecutor<Void, Object> terminal) {
+    Object executeChain(long chainId, long callId, LayerTerminal<Void, Object> terminal) {
         // Apply the next-step factory: for linked extensions, this wraps the terminal
         // with the inner extension's executeChain(); for unlinked extensions, this
         // returns the terminal unchanged (identity function).

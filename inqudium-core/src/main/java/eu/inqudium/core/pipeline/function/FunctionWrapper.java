@@ -2,7 +2,7 @@ package eu.inqudium.core.pipeline.function;
 
 import eu.inqudium.core.pipeline.BaseWrapper;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.LayerAction;
 
 import java.util.function.Function;
@@ -63,9 +63,9 @@ public class FunctionWrapper<I, O>
      * @param delegate the real function to invoke at the end of the chain
      * @param <I>      the function's input type
      * @param <O>      the function's output type
-     * @return a terminal {@link InternalExecutor} that calls {@code delegate.apply(input)}
+     * @return a terminal {@link LayerTerminal} that calls {@code delegate.apply(input)}
      */
-    private static <I, O> InternalExecutor<I, O> coreFor(Function<I, O> delegate) {
+    private static <I, O> LayerTerminal<I, O> coreFor(Function<I, O> delegate) {
         return (chainId, callId, input) -> delegate.apply(input);
     }
 

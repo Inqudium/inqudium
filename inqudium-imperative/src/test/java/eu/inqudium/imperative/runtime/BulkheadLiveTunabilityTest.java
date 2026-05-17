@@ -9,7 +9,7 @@ import eu.inqudium.config.snapshot.SemaphoreStrategyConfig;
 import eu.inqudium.config.validation.ApplyOutcome;
 import eu.inqudium.config.validation.BuildReport;
 import eu.inqudium.config.validation.VetoFinding;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Bulkhead live-tunability check")
 class BulkheadLiveTunabilityTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static final ComponentKey INVENTORY_KEY =
@@ -179,7 +179,7 @@ class BulkheadLiveTunabilityTest {
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
                 CountDownLatch holding = new CountDownLatch(1);
                 CountDownLatch acquired = new CountDownLatch(1);
-                InternalExecutor<String, String> blocking = (cid, callId, arg) -> {
+                LayerTerminal<String, String> blocking = (cid, callId, arg) -> {
                     acquired.countDown();
                     try {
                         holding.await(5, TimeUnit.SECONDS);

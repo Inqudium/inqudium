@@ -9,17 +9,17 @@ import eu.inqudium.core.element.bulkhead.event.BulkheadOnRejectEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadOnReleaseEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadRollbackTraceEvent;
 import eu.inqudium.core.element.bulkhead.event.BulkheadWaitTraceEvent;
-import eu.inqudium.core.element.bulkhead.strategy.BlockingBulkheadStrategy;
+import eu.inqudium.core.element.bulkhead.strategy.TimedBulkheadStrategy;
 import eu.inqudium.core.element.bulkhead.strategy.RejectionContext;
 import eu.inqudium.core.event.InqEventPublisher;
 import eu.inqudium.core.log.Logger;
 import eu.inqudium.core.pipeline.InqDecorator;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.time.InqClock;
 import eu.inqudium.core.time.InqNanoTimeSource;
 import eu.inqudium.imperative.bulkhead.config.InqImperativeBulkheadConfig;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -86,14 +86,14 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
     private final Logger logger;
     private final String name;
     private final InqImperativeBulkheadConfig config;
-    private final BlockingBulkheadStrategy strategy;
+    private final TimedBulkheadStrategy strategy;
     private final InqEventPublisher eventPublisher;
     private final BulkheadEventConfig eventConfig;
     private final Duration maxWaitDuration;
     private final InqNanoTimeSource nanoTimeSource;
     private final InqClock clock;
 
-    public ImperativeBulkhead(InqImperativeBulkheadConfig config, BlockingBulkheadStrategy strategy) {
+    public ImperativeBulkhead(InqImperativeBulkheadConfig config, TimedBulkheadStrategy strategy) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(strategy, "strategy must not be null");
         this.logger = config.general().loggerFactory().getLogger(getClass());
@@ -134,7 +134,7 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
      *
      * <p>Execution flow:</p>
      * <ol>
-     *   <li>Acquire a permit from the {@link BlockingBulkheadStrategy} (with configurable wait)</li>
+     *   <li>Acquire a permit from the {@link TimedBulkheadStrategy} (with configurable wait)</li>
      *   <li>On success: publish diagnostic acquire event, then delegate to {@code next}</li>
      *   <li>On rejection or interrupt: publish failure event, throw appropriate exception</li>
      *   <li>Measure RTT and release the permit in a {@code finally} block</li>
@@ -156,7 +156,7 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
     public R execute(long chainId,
                      long callId,
                      A argument,
-                     InternalExecutor<A, R> next) {
+                     LayerTerminal<A, R> next) {
 
         // ── Acquire permit ──
         // startWait is only needed for trace events (wait duration measurement).
@@ -212,7 +212,7 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
      *
      * <ul>
      *   <li><strong>Start phase</strong> (synchronous, on the calling thread): acquire a permit
-     *       from the {@link BlockingBulkheadStrategy}, publish diagnostic acquire events, and
+     *       from the {@link TimedBulkheadStrategy}, publish diagnostic acquire events, and
      *       start RTT measurement. This provides backpressure — the calling thread blocks if
      *       permits are exhausted.</li>
      *   <li><strong>End phase</strong> (asynchronous, on the completing thread): release the permit,
@@ -234,7 +234,7 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
     public CompletionStage<R> executeAsync(long chainId,
                                            long callId,
                                            A argument,
-                                           InternalAsyncExecutor<A, R> next) {
+                                           AsyncLayerTerminal<A, R> next) {
         String callIdStr = Long.toString(callId);
 
         // ── Start phase: acquire permit (synchronous) ──
@@ -331,7 +331,7 @@ public final class ImperativeBulkhead<A, R> implements Bulkhead<A, R> {
         return strategy.maxConcurrentCalls();
     }
 
-    public BlockingBulkheadStrategy getStrategy() {
+    public TimedBulkheadStrategy getStrategy() {
         return strategy;
     }
 

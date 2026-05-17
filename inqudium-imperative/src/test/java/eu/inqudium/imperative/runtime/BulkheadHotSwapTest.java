@@ -5,7 +5,7 @@ import eu.inqudium.config.lifecycle.ChangeDecision;
 import eu.inqudium.config.runtime.ComponentKey;
 import eu.inqudium.config.runtime.ImperativeTag;
 import eu.inqudium.config.runtime.InqRuntime;
-import eu.inqudium.config.snapshot.AdaptiveNonBlockingStrategyConfig;
+import eu.inqudium.config.snapshot.AdaptiveInstantStrategyConfig;
 import eu.inqudium.config.snapshot.AdaptiveStrategyConfig;
 import eu.inqudium.config.snapshot.AimdLimitAlgorithmConfig;
 import eu.inqudium.config.snapshot.CoDelStrategyConfig;
@@ -14,7 +14,7 @@ import eu.inqudium.config.snapshot.VegasLimitAlgorithmConfig;
 import eu.inqudium.config.validation.ApplyOutcome;
 import eu.inqudium.config.validation.BuildReport;
 import eu.inqudium.config.validation.VetoFinding;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.imperative.bulkhead.InqBulkhead;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Bulkhead strategy hot-swap")
 class BulkheadHotSwapTest {
 
-    private static final InternalExecutor<String, String> IDENTITY =
+    private static final LayerTerminal<String, String> IDENTITY =
             (chainId, callId, argument) -> argument;
 
     private static final ComponentKey INVENTORY_KEY =
@@ -135,7 +135,7 @@ class BulkheadHotSwapTest {
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
                 CountDownLatch holding = new CountDownLatch(1);
                 CountDownLatch acquired = new CountDownLatch(1);
-                InternalExecutor<String, String> blocking = (cid, callId, arg) -> {
+                LayerTerminal<String, String> blocking = (cid, callId, arg) -> {
                     acquired.countDown();
                     try {
                         holding.await(5, TimeUnit.SECONDS);
@@ -288,7 +288,7 @@ class BulkheadHotSwapTest {
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
                 CountDownLatch holding = new CountDownLatch(1);
                 CountDownLatch acquired = new CountDownLatch(1);
-                InternalExecutor<String, String> blocking = (cid, callId, arg) -> {
+                LayerTerminal<String, String> blocking = (cid, callId, arg) -> {
                     acquired.countDown();
                     try {
                         holding.await(5, TimeUnit.SECONDS);
@@ -436,7 +436,7 @@ class BulkheadHotSwapTest {
                         (InqBulkhead<String, String>) runtime.imperative().bulkhead("inventory");
                 bh.execute(1L, 1L, "warm", IDENTITY);
                 assertThat(bh.snapshot().strategy())
-                        .isInstanceOf(AdaptiveNonBlockingStrategyConfig.class);
+                        .isInstanceOf(AdaptiveInstantStrategyConfig.class);
                 assertThat(bh.availablePermits()).isEqualTo(5);
 
                 BuildReport report = runtime.update(u -> u.imperative(im -> im

@@ -3,14 +3,14 @@ package eu.inqudium.aspect.pipeline;
 import eu.inqudium.core.element.InqElement;
 import eu.inqudium.core.pipeline.InqDecorator;
 import eu.inqudium.core.pipeline.InqPipeline;
-import eu.inqudium.core.pipeline.InternalExecutor;
+import eu.inqudium.core.pipeline.LayerTerminal;
 import eu.inqudium.core.pipeline.function.JoinPointExecutor;
 import eu.inqudium.core.pipeline.LayerAction;
 import eu.inqudium.core.pipeline.ResolvedPipelineState;
 import eu.inqudium.core.pipeline.Throws;
 import eu.inqudium.imperative.core.pipeline.AsyncLayerAction;
 import eu.inqudium.imperative.core.pipeline.InqAsyncDecorator;
-import eu.inqudium.imperative.core.pipeline.InternalAsyncExecutor;
+import eu.inqudium.imperative.core.pipeline.AsyncLayerTerminal;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 
@@ -47,7 +47,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>The storage order matches the convention used by {@code ResolvedPipeline}
  * and {@code SyncPipelineTerminal}. Per-call composition iterates reverse
  * over the array producing only {@code N+1} escape-analysable
- * {@link InternalExecutor} / {@link InternalAsyncExecutor} lambdas — no heap
+ * {@link LayerTerminal} / {@link AsyncLayerTerminal} lambdas — no heap
  * wrapper objects.</p>
  *
  * <h3>Per-method caching</h3>
@@ -278,7 +278,7 @@ public final class HybridAspectPipelineTerminal {
 
         // Terminal: invokes the executor and wraps checked exceptions for
         // transport through the chain's unchecked-only layer actions.
-        InternalExecutor<Void, Object> current = (c, ca, a) -> {
+        LayerTerminal<Void, Object> current = (c, ca, a) -> {
             try {
                 return executor.proceed();
             } catch (Throwable t) {
@@ -289,7 +289,7 @@ public final class HybridAspectPipelineTerminal {
         LayerAction<Void, Object>[] acts = syncActions;
         for (int i = acts.length - 1; i >= 0; i--) {
             LayerAction<Void, Object> action = acts[i];
-            InternalExecutor<Void, Object> next = current;
+            LayerTerminal<Void, Object> next = current;
             current = (c, ca, a) -> action.execute(c, ca, a, next);
         }
 
@@ -315,7 +315,7 @@ public final class HybridAspectPipelineTerminal {
         // Terminal: invokes the executor and bridges checked exceptions
         // through CompletionException. Runtime exceptions and errors propagate
         // directly and are converted to failed futures at the boundary.
-        InternalAsyncExecutor<Void, Object> current = (c, ca, a) -> {
+        AsyncLayerTerminal<Void, Object> current = (c, ca, a) -> {
             try {
                 return executor.proceed();
             } catch (RuntimeException | Error e) {
@@ -328,7 +328,7 @@ public final class HybridAspectPipelineTerminal {
         AsyncLayerAction<Void, Object>[] acts = asyncActions;
         for (int i = acts.length - 1; i >= 0; i--) {
             AsyncLayerAction<Void, Object> action = acts[i];
-            InternalAsyncExecutor<Void, Object> next = current;
+            AsyncLayerTerminal<Void, Object> next = current;
             current = (c, ca, a) -> action.executeAsync(c, ca, a, next);
         }
 
